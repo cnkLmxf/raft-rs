@@ -744,10 +744,25 @@ impl<T: Storage> Raft<T> {
         // use latest "last" index after truncate/append
         li = self.raft_log.append(es);
 
+        // SSD-TODO: not update pr until on_sync
+        return;
+
         let self_id = self.id;
         self.mut_prs().get_mut(self_id).unwrap().maybe_update(li);
 
         // Regardless of maybe_commit's return, our caller will call bcastAppend.
+        self.maybe_commit();
+    }
+
+    /// TODO: comments
+    pub fn on_sync(&mut self) {
+        let self_id = self.id;
+        let last_index = self.raft_log.last_index();
+        let pr = self.mut_prs().get_mut(self_id);
+        if pr.is_none() {
+            return;
+        }
+        pr.unwrap().maybe_update(last_index);
         self.maybe_commit();
     }
 
