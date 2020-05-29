@@ -360,24 +360,8 @@ impl<T: Storage> RaftLog<T> {
         let high = match synced_idx {
             Some(synced_idx) => {
                 if synced_idx >= self.committed {
-                    info!(
-                        self.unstable.logger,
-                        "SSD-SI next_entries_since equal/greater";
-                        "committed_idx" => self.committed,
-                        "since_idx" => since_idx,
-                        "synced_idx" => synced_idx,
-                        "shrinked" => self.committed - synced_idx,
-                    );
                     self.committed + 1
                 } else {
-                    info!(
-                        self.unstable.logger,
-                        "SSD-SI next_entries_since shrinked";
-                        "committed_idx" => self.committed,
-                        "since_idx" => since_idx,
-                        "synced_idx" => synced_idx,
-                        "shrinked" => self.committed - synced_idx,
-                    );
                     synced_idx + 1
                 }
             }
@@ -405,24 +389,8 @@ impl<T: Storage> RaftLog<T> {
         let high = match synced_idx {
             Some(synced_idx) => {
                 if synced_idx >= self.committed {
-                    info!(
-                        self.unstable.logger,
-                        "SSD-SI has_next_entries_since equal/greater";
-                        "committed_idx" => self.committed,
-                        "since_idx" => since_idx,
-                        "synced_idx" => synced_idx,
-                        "shrinked" => self.committed - synced_idx,
-                    );
                     self.committed + 1
                 } else {
-                    info!(
-                        self.unstable.logger,
-                        "SSD-SI has_next_entries_since shrinked";
-                        "committed_idx" => self.committed,
-                        "since_idx" => since_idx,
-                        "synced_idx" => synced_idx,
-                        "shrinked" => self.committed - synced_idx,
-                    );
                     synced_idx + 1
                 }
             }
