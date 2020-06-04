@@ -737,9 +737,8 @@ impl<T: Storage> Raft<T> {
     }
 
     /// Notify that raft_log was well persisted
-    pub fn on_sync(&mut self) {
+    pub fn on_sync(&mut self, last_index: u64) {
         let self_id = self.id;
-        let last_index = self.raft_log.last_index();
         let pr = self.mut_prs().get_mut(self_id);
         if !pr.is_none() {
             pr.unwrap().maybe_update(last_index);
