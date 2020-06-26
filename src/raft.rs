@@ -733,15 +733,15 @@ impl<T: Storage> Raft<T> {
         }
         self.raft_log.append(es);
 
-        // Not move self's pr.matched until self.on_sync
+        // Not move self's pr.matched until self.on_synced
     }
 
     /// Notify that raft_log was well persisted
-    pub fn on_sync(&mut self, last_index: u64) {
+    pub fn on_synced(&mut self, synced_index: u64) {
         let self_id = self.id;
         let pr = self.mut_prs().get_mut(self_id);
         if !pr.is_none() {
-            pr.unwrap().maybe_update(last_index);
+            pr.unwrap().maybe_update(synced_index);
             // Regardless of maybe_commit's return, our caller will call bcastAppend.
             self.maybe_commit();
         }

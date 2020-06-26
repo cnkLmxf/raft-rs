@@ -126,8 +126,7 @@ impl Ready {
         rd.committed_entries = Some(
             (match since_idx {
                 None => raft.raft_log.next_entries(),
-                Some((since_idx, None)) => raft.raft_log.next_entries_since(since_idx, None),
-                Some((since_idx, Some(synced_idx))) => raft.raft_log.next_entries_since(since_idx, Some(synced_idx)),
+                Some((since_idx, synced_idx)) => raft.raft_log.next_entries_since(since_idx, synced_idx),
             })
             .unwrap_or_else(Vec::new),
         );
@@ -380,8 +379,7 @@ impl<T: Storage> RawNode<T> {
         false
     }
 
-    /// Given an index, can determine if there is a ready state from that time.
-    pub fn has_ready_since(&self, applied_idx: Option<(u64, Option<u64>)>) -> bool {
+    fn check_has_ready(&self, applied_idx: Option<(u64, Option<u64>)>) -> bool {
         let raft = &self.raft;
         if !raft.msgs.is_empty() || raft.raft_log.unstable_entries().is_some() {
             return true;
@@ -394,8 +392,7 @@ impl<T: Storage> RawNode<T> {
         }
         let has_unapplied_entries = match applied_idx {
             None => raft.raft_log.has_next_entries(),
-            Some((applied_idx, None)) => raft.raft_log.has_next_entries_since(applied_idx, None),
-            Some((applied_idx, Some(synced_idx))) => raft.raft_log.has_next_entries_since(applied_idx, Some(synced_idx)),
+            Some((applied_idx, synced_idx)) => raft.raft_log.has_next_entries_since(applied_idx, synced_idx),
         };
         if has_unapplied_entries {
             return true;
@@ -410,11 +407,23 @@ impl<T: Storage> RawNode<T> {
         false
     }
 
+    /// Given an index, can determine if there is a ready state from that time.
+    #[inline]
+    pub fn has_ready_since(&self, applied_idx: u64) -> bool {
+        self.check_has_ready(Some((applied_idx, None)))
+    }
+
+    /// Given an index range, can determine if there is a ready state between that time span.
+    #[inline]
+    pub fn has_ready_from_range(&self, applied_idx: u64, synced_idx: u64) -> bool {
+        self.check_has_ready(Some((applied_idx, Some(synced_idx))))
+    }
+
     /// HasReady called when RawNode user need to check if any Ready pending.
     /// Checking logic in this method should be consistent with Ready.containsUpdates().
     #[inline]
     pub fn has_ready(&self) -> bool {
-        self.has_ready_since(None)
+        self.check_has_ready(None)
     }
 
     /// Grabs the snapshot from the raft if available.
