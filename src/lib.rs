@@ -223,7 +223,7 @@ a Raft snapshot from the leader and we must apply the snapshot:
     # }
     # let mut ready = node.ready();
     #
-    if !raft::is_empty_snap(ready.snapshot()) {
+    if !ready.snapshot().is_empty() {
         // This is a snapshot, we need to apply the snapshot at first.
         node.mut_store()
             .wl()
@@ -473,7 +473,6 @@ macro_rules! fatal {
 mod config;
 mod errors;
 mod log_unstable;
-mod progress;
 #[cfg(test)]
 pub mod raft;
 #[cfg(not(test))]
@@ -483,21 +482,23 @@ pub mod raw_node;
 mod read_only;
 mod status;
 pub mod storage;
+mod tracker;
 pub mod util;
 
 pub use self::config::Config;
 pub use self::errors::{Error, Result, StorageError};
 pub use self::log_unstable::Unstable;
-pub use self::progress::inflights::Inflights;
-pub use self::progress::progress_set::{Configuration, ProgressSet};
-pub use self::progress::{Progress, ProgressState};
 pub use self::raft::{vote_resp_msg_type, Raft, SoftState, StateRole, INVALID_ID, INVALID_INDEX};
 pub use self::raft_log::{RaftLog, NO_LIMIT};
-pub use self::raw_node::{is_empty_snap, Peer, RawNode, Ready, SnapshotStatus};
+pub use self::tracker::{Configuration, Inflights, Progress, ProgressSet, ProgressState};
+
+#[allow(deprecated)]
+pub use self::raw_node::is_empty_snap;
+pub use self::raw_node::{Peer, RawNode, Ready, SnapshotStatus};
 pub use self::read_only::{ReadOnlyOption, ReadState};
 pub use self::status::Status;
 pub use self::storage::{RaftState, Storage};
-pub use self::util::{majority, QuorumFn};
+pub use self::util::majority;
 pub use raft_proto::eraftpb;
 
 pub mod prelude {
@@ -522,7 +523,7 @@ pub mod prelude {
 
     pub use crate::raw_node::{Peer, RawNode, Ready, SnapshotStatus};
 
-    pub use crate::progress::Progress;
+    pub use crate::Progress;
 
     pub use crate::status::Status;
 

@@ -338,27 +338,35 @@ fn test_raw_node_start() {
 
     let rd = raw_node.ready();
     must_cmp_ready(&rd, &None, &None, &[], vec![], false);
-
     store.wl().append(rd.entries()).unwrap();
     raw_node.advance(rd);
 
     raw_node.campaign().expect("");
     let rd = raw_node.ready();
+    must_cmp_ready(
+        &rd,
+        &Some(soft_state(1, StateRole::Leader)),
+        &Some(hard_state(2, 2, 1)),
+        &[new_entry(2, 2, None)],
+        vec![new_entry(2, 2, None)],
+        true,
+    );
     store.wl().append(rd.entries()).expect("");
     raw_node.advance(rd);
 
-    raw_node.propose(vec![], b"foo".to_vec()).expect("");
+    raw_node.propose(vec![], b"somedata".to_vec()).expect("");
     let rd = raw_node.ready();
     must_cmp_ready(
         &rd,
         &None,
         &Some(hard_state(2, 3, 1)),
-        &[new_entry(2, 3, Some("foo"))],
-        vec![new_entry(2, 3, Some("foo"))],
-        false,
+        &[new_entry(2, 3, SOME_DATA)],
+        vec![new_entry(2, 3, SOME_DATA)],
+        true,
     );
     store.wl().append(rd.entries()).expect("");
     raw_node.advance(rd);
+
     assert!(!raw_node.has_ready());
 }
 
@@ -388,7 +396,7 @@ fn test_raw_node_restart_from_snapshot() {
 
     let mut raw_node = {
         let raw_node = new_raw_node(1, vec![], 10, 1, new_storage(), &l);
-        let store = raw_node.raft.raft_log.store;
+        let store = raw_node.raft.r.raft_log.store;
         store.wl().apply_snapshot(snap).unwrap();
         store.wl().append(&entries).unwrap();
         store.wl().set_hardstate(hard_state(1, 3, 0));
@@ -471,4 +479,16 @@ fn test_skip_bcast_commit() {
     assert_eq!(nt.peers[&1].raft_log.committed, 6);
     assert_eq!(nt.peers[&2].raft_log.committed, 6);
     assert_eq!(nt.peers[&3].raft_log.committed, 6);
+}
+
+/// test_set_priority checks the set_priority function in RawNode.
+#[test]
+fn test_set_priority() {
+    let l = default_logger();
+    let mut raw_node = new_raw_node(1, vec![1], 10, 1, new_storage(), &l);
+    let priorities = vec![0, 1, 5, 10, 10000];
+    for p in priorities {
+        raw_node.set_priority(p);
+        assert_eq!(raw_node.raft.priority, p);
+    }
 }
