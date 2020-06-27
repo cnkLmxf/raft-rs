@@ -379,7 +379,7 @@ impl<T: Storage> RawNode<T> {
         let hs = raft.hard_state();
         let prev_hs =&self.prev_hs;
         if &hs != prev_hs {
-            if hs.vote != prev_hs.vote || hs.term != prev_hs.term || !rd.entries.is_empty() {
+            if hs.vote != prev_hs.vote || hs.term != prev_hs.term {
                 return true;
             }
         }
