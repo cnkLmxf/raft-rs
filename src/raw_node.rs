@@ -373,8 +373,8 @@ impl<T: Storage> RawNode<T> {
         Ready::new(&mut self.raft, &self.prev_ss, &self.prev_hs, None)
     }
 
-    /// Return if fetch ready it will must_sync flag or not
-    pub fn has_must_sync_ready(&mut self) -> bool {
+    /// Return if fetch ready, it will need to be synced immediately
+    pub fn has_must_immediate_sync_ready(&mut self) -> bool {
         let raft = &self.raft;
         let hs = raft.hard_state();
         let prev_hs =&self.prev_hs;
