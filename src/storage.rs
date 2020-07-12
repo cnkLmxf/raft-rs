@@ -40,20 +40,25 @@ use util;
 
 /// Holds both the hard state (commit index, vote leader, term) and the configuration state
 /// (Current node IDs)
+///同时保留硬状态（提交索引，投票负责人，条款）和配置状态（当前节点ID）
 #[derive(Debug, Clone, Getters, Setters)]
 pub struct RaftState {
     /// Contains the last meta information including commit index, the vote leader, and the vote term.
+    ///包含最后一个元信息，包括提交索引，投票负责人和投票期限。
     pub hard_state: HardState,
     /// Records the current node IDs like `[1, 2, 3]` in the cluster. Every Raft node must have a unique ID in the cluster;
+    ///记录集群中的当前节点ID，例如“ [1、2、3]”。 每个Raft节点在集群中都必须具有唯一的ID。
     pub conf_state: ConfState,
     /// If this peer is in the middle of a membership change (The period between
     /// `BeginMembershipChange` and `FinalizeMembershipChange`) this will hold the final desired
     /// state.
+    ///如果此对等方处于成员资格更改的中间（“ BeginMembershipChange”和“ FinalizeMembershipChange”之间的时间段），则它将保持最终的所需状态。
     #[get = "pub"]
     #[set]
     pending_conf_state: Option<ConfState>,
     /// If `pending_conf_state` exists this will contain the index of the `BeginMembershipChange`
     /// entry.
+    ///如果存在“ pending_conf_state”，它将包含“ BeginMembershipChange”条目的索引。
     #[get = "pub"]
     #[set]
     pending_conf_state_start_index: Option<u64>,
@@ -65,40 +70,56 @@ pub struct RaftState {
 /// If any Storage method returns an error, the raft instance will
 /// become inoperable and refuse to paticipate in elections; the
 /// application is responsible for cleanup and recovery in this case.
+///存储会保存有关当前Raft实现的所有信息，包括Raft Log，提交索引，要投票的领导者等。
+///请注意在没有Log的情况下返回的内容，但需要在该位置获得`term`。 index`first_index（）-1`。
+///要解决此问题，您可以使用虚拟Log条目来保留最后一个被截断的Log条目。
+///请参阅[`entries：vec！[Entry :: new（）]`]]（src / storage.rs＃L85）作为参考。
+///
+///如果有任何Storage方法返回错误，则Raft实例将无法操作并拒绝参加选举； 在这种情况下，应用程序负责清理和恢复。
 pub trait Storage {
     /// `initial_state` is called when Raft is initialized. This interface will return a `RaftState` which contains `HardState` and `ConfState`;
+    ///初始化Raft时会调用“ initial_state”。 这个接口将返回一个包含有HardState和ConfState的RaftState。
     fn initial_state(&self) -> Result<RaftState>;
     /// Returns a slice of log entries in the range `[low, high)`.
     /// max_size limits the total size of the log entries returned, but
     /// entries returns at least one entry if any.
+    ///返回范围为[[low，high）`的日志条目的一部分。 max_size限制了返回的日志条目的总大小，但是条目至少返回一个条目（如果有）。
     fn entries(&self, low: u64, high: u64, max_size: u64) -> Result<Vec<Entry>>;
     /// Returns the term of entry idx, which must be in the range
     /// [first_index()-1, last_index()]. The term of the entry before
     /// first_index is retained for matching purpose even though the
     /// rest of that entry may not be available.
+    ///返回条目idx的术语，该术语必须在[first_index（）-1，last_index（）]范围内。
+    ///保留first_index之前的条目术语以用于匹配目的，即使该条目的其余部分可能不可用。
     fn term(&self, idx: u64) -> Result<u64>;
     /// Returns the index of the first log entry that is
     /// possible available via entries (older entries have been incorporated
     /// into the latest snapshot; if storage only contains the dummy entry the
     /// first log entry is not available).
+    ///返回可以通过条目获得的第一个日志条目的索引（较旧的条目已合并到最新的快照中；如果存储仅包含虚拟条目，则第一个日志条目不可用）。
     fn first_index(&self) -> Result<u64>;
     /// The index of the last entry in the log.
+    ///日志中最后一个条目的索引。
     fn last_index(&self) -> Result<u64>;
     /// Returns the most recent snapshot.
     ///
     /// If snapshot is temporarily unavailable, it should return SnapshotTemporarilyUnavailable,
     /// so raft state machine could know that Storage needs some time to prepare
     /// snapshot and call snapshot later.
+    ///返回最近的快照。
+     ///如果快照暂时不可用，则应返回SnapshotTemporarilyUnavailable，因此筏状态机可以知道存储需要一些时间来准备快照并稍后调用快照。
     fn snapshot(&self) -> Result<Snapshot>;
 }
 
 /// The Memory Storage Core instance holds the actual state of the storage struct. To access this
 /// value, use the `rl` and `wl` functions on the main MemStorage implementation.
+/// Memory Storage Core实例保存存储结构的实际状态。 要访问此值，请在主要MemStorage实现上使用rl和wl函数。
 pub struct MemStorageCore {
     hard_state: HardState,
     snapshot: Snapshot,
     // TODO: maybe vec_deque
     // entries[i] has raft log position i+snapshot.get_metadata().get_index()
+    // entry [i]具有raft日志位置i + snapshot.get_metadata（）.get_index（）
     entries: Vec<Entry>,
 }
 
@@ -106,6 +127,7 @@ impl Default for MemStorageCore {
     fn default() -> MemStorageCore {
         MemStorageCore {
             // When starting from scratch populate the list with a dummy entry at term zero.
+            //从头开始时，请在术语零处填充一个伪条目。
             entries: vec![Entry::new()],
             hard_state: HardState::new(),
             snapshot: Snapshot::new(),
@@ -115,11 +137,13 @@ impl Default for MemStorageCore {
 
 impl MemStorageCore {
     /// Saves the current HardState.
+    ///保存当前的HardState。
     pub fn set_hardstate(&mut self, hs: HardState) {
         self.hard_state = hs;
     }
 
     /// Saves the current conf state.
+    ///保存当前的conf状态。
     pub fn set_conf_state(
         &mut self,
         cs: ConfState,
@@ -141,8 +165,10 @@ impl MemStorageCore {
     }
 
     /// Overwrites the contents of this Storage object with those of the given snapshot.
+    ///用给定快照的内容覆盖此Storage对象的内容。
     pub fn apply_snapshot(&mut self, snapshot: Snapshot) -> Result<()> {
         // handle check for old snapshot being applied
+        //处理检查是否已应用旧快照
         let index = self.snapshot.get_metadata().get_index();
         let snapshot_index = snapshot.get_metadata().get_index();
         if index >= snapshot_index {
@@ -161,6 +187,8 @@ impl MemStorageCore {
     /// can be used to reconstruct the state at that point.
     /// If any configuration changes have been made since the last compaction,
     /// the result of the last apply_conf_change must be passed in.
+    ///制作一个快照，可以使用snapshot（）检索该快照，并可以用来重建该点的状态。
+    ///如果自上次压缩以来已进行了任何配置更改，则必须传递上一次apply_conf_change的结果。
     pub fn create_snapshot(
         &mut self,
         idx: u64,
@@ -199,6 +227,8 @@ impl MemStorageCore {
     /// Discards all log entries prior to compact_index.
     /// It is the application's responsibility to not attempt to compact an index
     /// greater than RaftLog.applied.
+    ///丢弃compact_index之前的所有日志条目。
+    ///不尝试压缩大于RaftLog.applied的索引是应用程序的责任。
     pub fn compact(&mut self, compact_index: u64) -> Result<()> {
         let offset = self.entries[0].get_index();
         if compact_index <= offset {
@@ -219,8 +249,10 @@ impl MemStorageCore {
     }
 
     /// Append the new entries to storage.
+    ///将新条目追加到存储。
     /// TODO: ensure the entries are continuous and
     /// entries[0].get_index() > self.entries[0].get_index()
+    /// TODO：确保条目是连续的，并且entry [0] .get_index（）> self.entries [0] .get_index（）
     pub fn append(&mut self, ents: &[Entry]) -> Result<()> {
         if ents.is_empty() {
             return Ok(());
@@ -232,6 +264,7 @@ impl MemStorageCore {
             return Ok(());
         }
         // truncate compacted entries
+        //截断压缩条目
         let te: &[Entry] = if first > ents[0].get_index() {
             let start_ent = (first - ents[0].get_index()) as usize;
             &ents[start_ent..]
@@ -261,6 +294,7 @@ impl MemStorageCore {
 
 /// `MemStorage` is a thread-safe implementation of Storage trait.
 /// It is mainly used for test purpose.
+///`MemStorage`是存储特征的线程安全实现。 它主要用于测试目的。
 #[derive(Clone, Default)]
 pub struct MemStorage {
     core: Arc<RwLock<MemStorageCore>>,
@@ -268,6 +302,7 @@ pub struct MemStorage {
 
 impl MemStorage {
     /// Returns a new memory storage value.
+    ///返回新的内存存储值。
     pub fn new() -> MemStorage {
         MemStorage {
             ..Default::default()
@@ -276,12 +311,14 @@ impl MemStorage {
 
     /// Opens up a read lock on the storage and returns a guard handle. Use this
     /// with functions that don't require mutation.
+    ///打开存储上的读锁，并返回保护句柄。 将此功能与不需要突变的功能一起使用。
     pub fn rl(&self) -> RwLockReadGuard<MemStorageCore> {
         self.core.read().unwrap()
     }
 
     /// Opens up a write lock on the storage and returns guard handle. Use this
     /// with functions that take a mutable reference to self.
+    ///打开存储上的写锁，并返回保护句柄。 将此功能与对self可变引用的函数一起使用。
     pub fn wl(&self) -> RwLockWriteGuard<MemStorageCore> {
         self.core.write().unwrap()
     }
@@ -289,6 +326,7 @@ impl MemStorage {
 
 impl Storage for MemStorage {
     /// Implements the Storage trait.
+    ///实现存储特征。
     fn initial_state(&self) -> Result<RaftState> {
         let core = self.rl();
         let mut state = RaftState {
@@ -314,6 +352,7 @@ impl Storage for MemStorage {
     }
 
     /// Implements the Storage trait.
+    ///实现存储特征。
     fn entries(&self, low: u64, high: u64, max_size: u64) -> Result<Vec<Entry>> {
         let core = self.rl();
         let offset = core.entries[0].get_index();
@@ -329,6 +368,7 @@ impl Storage for MemStorage {
             );
         }
         // only contains dummy entries.
+        //仅包含伪条目。
         if core.entries.len() == 1 {
             return Err(Error::Store(StorageError::Unavailable));
         }
@@ -341,6 +381,7 @@ impl Storage for MemStorage {
     }
 
     /// Implements the Storage trait.
+    ///实现存储特征。
     fn term(&self, idx: u64) -> Result<u64> {
         let core = self.rl();
         let offset = core.entries[0].get_index();
@@ -354,18 +395,21 @@ impl Storage for MemStorage {
     }
 
     /// Implements the Storage trait.
+    ///实现存储特征。
     fn first_index(&self) -> Result<u64> {
         let core = self.rl();
         Ok(core.entries[0].get_index() + 1)
     }
 
     /// Implements the Storage trait.
+    ///实现存储特征。
     fn last_index(&self) -> Result<u64> {
         let core = self.rl();
         Ok(core.inner_last_index())
     }
 
     /// Implements the Storage trait.
+    ///实现存储特征。
     fn snapshot(&self) -> Result<Snapshot> {
         let core = self.rl();
         Ok(core.snapshot.clone())

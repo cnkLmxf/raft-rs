@@ -8,14 +8,17 @@ enum EntryType {
 
 // The entry is a type of change that needs to be applied. It contains two data fields.
 // While the fields are built into the model; their usage is determined by the entry_type.
+//entry是一种需要apply的更改类型。 它包含两个数据字段。 虽然字段已内置到模型中； 它们的用法由entry_type决定。
 //
 // For normal entries, the data field should contain the data change that should be applied.
 // The context field can be used for any contextual data that might be relevant to the
 // application of the data.
+//对于普通entry，数据字段应包含应该被apply的数据更改。 上下文字段可以用于可能与数据的应用相关的任何上下文数据。
 //
 // For configuration changes, the data will contain the ConfChange message and the
 // context will provide anything needed to assist the configuration change. The context
 // if for the user to set and use in this case.
+//对于配置更改，数据将包含ConfChange消息，并且上下文将提供协助配置更改所需的任何内容。 在这种情况下，供用户设置和使用的上下文。
 message Entry {
     EntryType entry_type = 1;
     uint64 term = 2;
@@ -24,6 +27,7 @@ message Entry {
     bytes context = 6;
 
     // Deprecated! It is kept for backward compatibility.
+    //不推荐使用！ 保留它是为了向后兼容。
     // TODO: remove it in the next major release.
     bool sync_log = 5;
 }
@@ -101,12 +105,16 @@ message ConfChange {
     uint64 id = 1;
     ConfChangeType change_type = 2;
     // Used in `AddNode`, `RemoveNode`, and `AddLearnerNode`.
+    //用于`AddNode`，`RemoveNode`和`AddLearnerNode`。
     uint64 node_id = 3;
     bytes context = 4;
     // Used in `BeginMembershipChange` and `FinalizeMembershipChange`.
+    //用于`BeginMembershipChange`和`FinalizeMembershipChange`中。
     ConfState configuration = 5;
     // Used in `BeginMembershipChange` and `FinalizeMembershipChange`.
     // Because `RawNode::apply_conf_change` takes a `ConfChange` instead of an `Entry` we must
     // include this index so it can be known.
+    //用于`BeginMembershipChange`和`FinalizeMembershipChange`中。
+    //因为`RawNode::apply_conf_change`接受`ConfChange`而不是`Entry`，所以我们必须包括该索引，这样它才能被知道。
     uint64 start_index = 6;
 }

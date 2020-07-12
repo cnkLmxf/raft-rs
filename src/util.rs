@@ -20,10 +20,12 @@ use eraftpb::{ConfChange, ConfChangeType, ConfState};
 use protobuf::Message;
 
 /// A number to represent that there is no limit.
+///表示没有限制的数字。
 pub const NO_LIMIT: u64 = u64::MAX;
 
 /// Truncates the list of entries down to a specific byte-length of
 /// all entries together.
+///将条目列表截断为所有条目的特定字节长度。
 ///
 /// # Examples
 ///
@@ -72,6 +74,7 @@ pub fn limit_size<T: Message + Clone>(entries: &mut Vec<T>, max: u64) {
 }
 
 // Bring some consistency to things. The protobuf has `nodes` and it's not really a term that's used anymore.
+//使事物保持一致性。 protobuf有`nodes'，它不再是一个真正的名词了。
 impl ConfState {
     /// Get the voters. This is identical to `get_nodes()`.
     #[inline]

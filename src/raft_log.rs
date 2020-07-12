@@ -37,26 +37,32 @@ use util;
 pub use util::NO_LIMIT;
 
 /// Raft log implementation
+///raft 日志实现
 #[derive(Default)]
 pub struct RaftLog<T: Storage> {
     /// Contains all stable entries since the last snapshot.
+    ///包含自上次快照以来的所有稳定条目。
     pub store: T,
 
     /// Contains all unstable entries and snapshot.
     /// they will be saved into storage.
+    ///包含所有不稳定的entry和snapshot。 它们将被保存到存储中。
     pub unstable: Unstable,
 
     /// The highest log position that is known to be in stable storage
     /// on a quorum of nodes.
+    ///已知在法定数量的节点上稳定存储的最高日志位置。
     pub committed: u64,
 
     /// The highest log position that the application has been instructed
     /// to apply to its state machine.
+    /// 已指示应用程序将其应用于状态机的最高日志位置。
     ///
-    /// Invariant: applied <= committed
+    /// Invariant(不变的): applied <= committed
     pub applied: u64,
 
     /// A tag associated with this raft for logging purposes.
+    ///与该筏相关联的标记，用于记录。
     pub tag: String,
 }
 
@@ -77,11 +83,13 @@ where
 
 impl<T: Storage> RaftLog<T> {
     /// Creates a new raft log with a given storage and tag.
+    ///用给定的存储和标签创建一个新的raft日志。
     pub fn new(storage: T, tag: String) -> RaftLog<T> {
         let first_index = storage.first_index().unwrap();
         let last_index = storage.last_index().unwrap();
 
         // Initialize committed and applied pointers to the time of the last compaction.
+        //初始化提交和应用的指针以指向上一次压缩的时间。
         RaftLog {
             store: storage,
             committed: first_index - 1,
@@ -92,10 +100,12 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Grabs the term from the last entry.
+    ///从最后一个条目中获取term。
     ///
     /// # Panics
     ///
     /// Panics if there are entries but the last term has been discarded.
+    ///如果有条目但最后一项已被丢弃，则感到恐慌。
     pub fn last_term(&self) -> u64 {
         match self.term(self.last_index()) {
             Ok(t) => t,
@@ -107,20 +117,24 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Grab a read-only reference to the underlying storage.
+    ///获取对基础存储的只读引用。
     #[inline]
     pub fn get_store(&self) -> &T {
         &self.store
     }
 
     /// Grab a mutable reference to the underlying storage.
+    ///获取对基础存储的可变引用。
     #[inline]
     pub fn mut_store(&mut self) -> &mut T {
         &mut self.store
     }
 
     /// For a given index, finds the term associated with it.
+    ///对于给定的索引，找到与其关联的术语。
     pub fn term(&self, idx: u64) -> Result<u64> {
         // the valid term range is [index of dummy entry, last index]
+        //有效期限范围是[虚拟条目的索引，最后一个索引]
         let dummy_idx = self.first_index() - 1;
         if idx < dummy_idx || idx > self.last_index() {
             return Ok(0u64);
@@ -140,10 +154,12 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Returns th first index in the store that is available via entries
+    ///返回存储中可通过条目获得的第一个索引
     ///
     /// # Panics
     ///
     /// Panics if the store doesn't have a first index.
+    ///如果商店没有第一个索引，则会感到恐慌。
     pub fn first_index(&self) -> u64 {
         match self.unstable.maybe_first_index() {
             Some(idx) => idx,
@@ -152,10 +168,12 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Returns the last index in the store that is available via entries.
+    ///返回存储中可通过条目使用的最后一个索引。
     ///
     /// # Panics
     ///
     /// Panics if the store doesn't have a last index.
+    ///如果商店没有最后一个索引，则会感到恐慌。
     pub fn last_index(&self) -> u64 {
         match self.unstable.maybe_last_index() {
             Some(idx) => idx,
@@ -164,21 +182,27 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Finds the index of the conflict.
+    ///查找冲突的索引。
     ///
     /// It returns the first index of conflicting entries between the existing
     /// entries and the given entries, if there are any.
+    ///如果存在，它将返回现有条目和给定条目之间冲突条目的第一个索引。
     ///
     /// If there are no conflicting entries, and the existing entries contain
     /// all the given entries, zero will be returned.
+    ///如果没有冲突的条目，并且现有条目包含所有给定的条目，则将返回零。
     ///
     /// If there are no conflicting entries, but the given entries contains new
     /// entries, the index of the first new entry will be returned.
+    ///如果没有冲突的条目，但是给定的条目包含新条目，则将返回第一个新条目的索引。
     ///
     /// An entry is considered to be conflicting if it has the same index but
     /// a different term.
+    ///如果条目具有相同的索引但术语不同，则认为该条目存在冲突。
     ///
     /// The first entry MUST have an index equal to the argument 'from'.
     /// The index of the given entries MUST be continuously increasing.
+    ///第一个条目必须具有等于自变量'from'的索引。 给定条目的索引必须不断增加。
     pub fn find_conflict(&self, ents: &[Entry]) -> u64 {
         for e in ents {
             if !self.match_term(e.get_index(), e.get_term()) {
@@ -198,16 +222,19 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Answers the question: Does this index belong to this term?
+    ///回答问题：该索引是否属于该术语？
     pub fn match_term(&self, idx: u64, term: u64) -> bool {
         self.term(idx).map(|t| t == term).unwrap_or(false)
     }
 
     /// Returns None if the entries cannot be appended. Otherwise,
     /// it returns Some(last index of new entries).
-    ///
-    /// # Panics
-    ///
-    /// Panics if it finds a conflicting index.
+    ///如果无法追加条目，则返回None。 否则，它将返回Some（新条目的最后一个索引）。
+      ///
+      /// # Panics
+      ///
+      /// Panics if it finds a conflicting index.
+      ///如果发现索引冲突，则表示恐慌。
     pub fn maybe_append(
         &mut self,
         idx: u64,
@@ -235,12 +262,15 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Sets the last committed value to the passed in value.
+    ///将最后提交的值设置为传入的值。
     ///
     /// # Panics
     ///
     /// Panics if the index goes past the last index.
+    ///如果索引超过最后一个索引，则发生恐慌。
     pub fn commit_to(&mut self, to_commit: u64) {
         // never decrease commit
+        //从不减少提交
         if self.committed >= to_commit {
             return;
         }
@@ -256,10 +286,12 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Advance the applied index to the passed in value.
+    ///将应用的索引前进到传递的值。
     ///
     /// # Panics
     ///
     /// Panics if the value passed in is not new or known.
+    ///如果传入的值不是新值或未知值，则会感到恐慌。
     #[deprecated = "Call raft::commit_apply(idx) instead. Joint Consensus requires an on-apply hook to
     finalize a configuration change. This will become internal API in future versions."]
     pub fn applied_to(&mut self, idx: u64) {
@@ -276,26 +308,31 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Returns the last applied index.
+    ///返回最后应用的索引。
     pub fn get_applied(&self) -> u64 {
         self.applied
     }
 
     /// Attempts to set the stable up to a given index.
+    ///尝试将稳定设置为给定的索引。
     pub fn stable_to(&mut self, idx: u64, term: u64) {
         self.unstable.stable_to(idx, term)
     }
 
     /// Snaps the unstable up to a current index.
+    ///将不稳定对象捕捉到当前索引。
     pub fn stable_snap_to(&mut self, idx: u64) {
         self.unstable.stable_snap_to(idx)
     }
 
     /// Returns a reference to the unstable log.
+    ///返回对不稳定日志的引用。
     pub fn get_unstable(&self) -> &Unstable {
         &self.unstable
     }
 
     /// Appends a set of entries to the unstable list.
+    ///将一组条目追加到不稳定列表中。
     pub fn append(&mut self, ents: &[Entry]) -> u64 {
         trace!(
             "{} Entries being appended to unstable list: {:?}",
@@ -318,6 +355,7 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Returns slice of entries that are not committed.
+    ///返回未提交的条目切片。
     pub fn unstable_entries(&self) -> Option<&[Entry]> {
         if self.unstable.entries.is_empty() {
             return None;
@@ -326,6 +364,7 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Returns entries starting from a particular index and not exceeding a bytesize.
+    ///返回从特定索引开始且不超过字节大小的条目。
     pub fn entries(&self, idx: u64, max_size: u64) -> Result<Vec<Entry>> {
         let last = self.last_index();
         if idx > last {
@@ -335,11 +374,13 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Returns all the entries.
+    ///返回所有条目。
     pub fn all_entries(&self) -> Vec<Entry> {
         let first_index = self.first_index();
         match self.entries(first_index, NO_LIMIT) {
             Err(e) => {
                 // try again if there was a racing compaction
+                //如果有压实率，请重试
                 if e == Error::Store(StorageError::Compacted) {
                     return self.all_entries();
                 }
@@ -355,11 +396,15 @@ impl<T: Storage> RaftLog<T> {
     /// later term is more up-to-date. If the logs end with the same term, then
     /// whichever log has the larger last_index is more up-to-date. If the logs are
     /// the same, the given log is up-to-date.
+    ///通过比较现有日志中最后一个条目的索引和术语来确定给定的（lastIndex，term）日志是否最新。
+    ///如果日志的最后一个条目具有不同的术语，则带有较新术语的日志将是最新的。
+    ///如果日志以相同的术语结尾，则last_index较大的日志是最新的。 如果日志相同，则给定的日志是最新的。
     pub fn is_up_to_date(&self, last_index: u64, term: u64) -> bool {
         term > self.last_term() || (term == self.last_term() && last_index >= self.last_index())
     }
 
     /// Returns any entries since the a particular index.
+    ///返回自特定索引以来的所有条目。
     pub fn next_entries_since(&self, since_idx: u64) -> Option<Vec<Entry>> {
         let offset = cmp::max(since_idx + 1, self.first_index());
         let committed = self.committed;
@@ -375,22 +420,26 @@ impl<T: Storage> RaftLog<T> {
     /// Returns all the available entries for execution.
     /// If applied is smaller than the index of snapshot, it returns all committed
     /// entries after the index of snapshot.
+    ///返回用于执行的所有可用条目。 如果应用的值小于快照的索引，它将返回快照的索引之后的所有已提交条目。
     pub fn next_entries(&self) -> Option<Vec<Entry>> {
         self.next_entries_since(self.applied)
     }
 
     /// Returns whether there are entries since a particular index.
+    ///返回自特定索引以来是否存在条目。
     pub fn has_next_entries_since(&self, since_idx: u64) -> bool {
         let offset = cmp::max(since_idx + 1, self.first_index());
         self.committed + 1 > offset
     }
 
     /// Returns whether there are new entries.
+    ///返回是否有新条目。
     pub fn has_next_entries(&self) -> bool {
         self.has_next_entries_since(self.applied)
     }
 
     /// Returns the current snapshot
+    ///返回当前快照
     pub fn snapshot(&self) -> Result<Snapshot> {
         self.unstable
             .snapshot
@@ -422,6 +471,7 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Attempts to commit the index and term and returns whether it did.
+    ///尝试提交索引和术语，并返回是否这样做。
     pub fn maybe_commit(&mut self, max_index: u64, term: u64) -> bool {
         if max_index > self.committed && self.term(max_index).unwrap_or(0) == term {
             debug!("Committing index {}", max_index);
@@ -434,6 +484,7 @@ impl<T: Storage> RaftLog<T> {
 
     /// Grabs a slice of entries from the raft. Unlike a rust slice pointer, these are
     /// returned by value. The result is truncated to the max_size in bytes.
+    ///从raft上抓取一块slice。 与rust slice指针不同，它们是按值返回的。 结果被截断为以字节为单位的max_size。
     pub fn slice(&self, low: u64, high: u64, max_size: u64) -> Result<Vec<Entry>> {
         let err = self.must_check_outofbounds(low, high);
         if err.is_some() {
@@ -478,6 +529,7 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Restores the current log from a snapshot.
+    ///从快照还原当前日志。
     pub fn restore(&mut self, snapshot: Snapshot) {
         info!(
             "{} log [{}] starts to restore snapshot [index: {}, term: {}]",

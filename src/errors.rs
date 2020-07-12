@@ -19,37 +19,45 @@ use protobuf::ProtobufError;
 
 quick_error! {
     /// The base error type for raft
+    ///raft的基本错误类型
     #[derive(Debug)]
     pub enum Error {
         /// An IO error occurred
+        ///发生IO错误
         Io(err: io::Error) {
             from()
             cause(err)
             description(err.description())
         }
         /// A storage error occurred.
+        ///发生存储错误。
         Store(err: StorageError) {
             from()
             cause(err)
             description(err.description())
         }
         /// Raft cannot step the local message.
+        ///raft无法执行本地消息。
         StepLocalMsg {
             description("raft: cannot step raft local message")
         }
         /// The raft peer is not found and thus cannot step.
+        ///找不到raft peer，因此无法 step。
         StepPeerNotFound {
             description("raft: cannot step as peer not found")
         }
         /// The proposal of changes was dropped.
+        ///删除了更改建议。
         ProposalDropped {
             description("raft: proposal dropped")
         }
         /// The configuration is invalid.
+        ///该配置无效。
         ConfigInvalid(desc: String) {
             description(desc)
         }
         /// A Protobuf message failed in some manner.
+        /// Protobuf消息以某种方式失败。
         Codec(err: ProtobufError) {
             from()
             cause(err)
@@ -57,22 +65,27 @@ quick_error! {
             display("protobuf error {:?}", err)
         }
         /// The node exists, but should not.
+        ///该节点存在，但不应该存在。
         Exists(id: u64, set: &'static str) {
             display("The node {} already exists in the {} set.", id, set)
         }
         /// The node does not exist, but should.
+        ///该节点不存在，但应该存在。
         NotExists(id: u64, set: &'static str) {
             display("The node {} is not in the {} set.", id, set)
         }
         /// The action given requires the node to be in a particular state role.
+        ///给定的操作要求节点处于特定的状态角色。
         InvalidState(role: StateRole) {
             display("Cannot complete that action while in {:?} role.", role)
         }
         /// The node attempted to transition to a new membership configuration while there was none pending.
+        ///在没有任何挂起的情况下，该节点尝试转换为新的成员资格配置。
         NoPendingMembershipChange {
             display("No pending membership change. Create a pending transition with `Raft::propose_membership_change` on the leader.")
         }
         /// An argument violates a calling contract.
+        ///一个参数违反了调用合同。
         ViolatesContract(contract: String) {
             display("An argument violate a calling contract: {}", contract)
         }
@@ -96,25 +109,31 @@ impl cmp::PartialEq for Error {
 
 quick_error! {
     /// An error with the storage.
+    ///存储错误。
     #[derive(Debug)]
     pub enum StorageError {
         /// The storage was compacted and not accessible
+        ///存储已压缩且无法访问
         Compacted {
             description("log compacted")
         }
         /// The log is not available.
+        ///日志不可用。
         Unavailable {
             description("log unavailable")
         }
         /// The snapshot is out of date.
+        ///快照已过期。
         SnapshotOutOfDate {
             description("snapshot out of date")
         }
         /// The snapshot is being created.
+        ///正在创建快照。
         SnapshotTemporarilyUnavailable {
             description("snapshot is temporarily unavailable")
         }
         /// Some other error occurred.
+        ///发生其他错误。
         Other(err: Box<error::Error + Sync + Send>) {
             from()
             cause(err.as_ref())
@@ -141,6 +160,7 @@ impl cmp::PartialEq for StorageError {
 }
 
 /// A result type that wraps up the raft errors.
+///包装了raft错误的结果类型。
 pub type Result<T> = result::Result<T, Error>;
 
 #[cfg(test)]

@@ -33,23 +33,31 @@ use eraftpb::{Entry, Snapshot};
 /// Note that unstable.offset may be less than the highest log
 /// position in storage; this means that the next write to storage
 /// might need to truncate the log before persisting unstable.entries.
+/// unstable.entries[i]具有raft日志位置i + unstable.offset。
+///请注意，unstable.offset可能小于存储中的最高日志位置。
+///这意味着下次写入存储时可能需要截断日志，然后才能保持unstable.entries。
 #[derive(Debug, PartialEq, Default)]
 pub struct Unstable {
     /// The incoming unstable snapshot, if any.
+    ///传入的不稳定快照（如果有）。
     pub snapshot: Option<Snapshot>,
 
     /// All entries that have not yet been written to storage.
+    ///尚未写入存储的所有entry。
     pub entries: Vec<Entry>,
 
     /// The offset from the vector index.
+    ///与向量索引的偏移量。
     pub offset: u64,
 
     /// The tag to use when logging.
+    ///logging时使用的tag。
     pub tag: String,
 }
 
 impl Unstable {
     /// Creates a new log of unstable entries.
+    ///创建不稳定entry的新日志。
     pub fn new(offset: u64, tag: String) -> Unstable {
         Unstable {
             offset,
@@ -61,6 +69,7 @@ impl Unstable {
 
     /// Returns the index of the first possible entry in entries
     /// if it has a snapshot.
+    ///如果有快照，则返回entry中第一个可能的entry的索引。
     pub fn maybe_first_index(&self) -> Option<u64> {
         self.snapshot
             .as_ref()
@@ -68,6 +77,7 @@ impl Unstable {
     }
 
     /// Returns the last index if it has at least one unstable entry or snapshot.
+    ///如果有至少一个不稳定的entry或快照，则返回最后一个索引。
     pub fn maybe_last_index(&self) -> Option<u64> {
         match self.entries.len() {
             0 => self
@@ -79,6 +89,7 @@ impl Unstable {
     }
 
     /// Returns the term of the entry at index idx, if there is any.
+    ///返回索引为idx的entry的term（如果有）。
     pub fn maybe_term(&self, idx: u64) -> Option<u64> {
         if idx < self.offset {
             let snapshot = self.snapshot.as_ref()?;
@@ -100,6 +111,7 @@ impl Unstable {
 
     /// Moves the stable offset up to the index. Provided that the index
     /// is in the same election term.
+    ///将稳定偏移量上移至索引。 前提是该索引处于相同的选举期限内。
     pub fn stable_to(&mut self, idx: u64, term: u64) {
         let t = self.maybe_term(idx);
         if t.is_none() {
@@ -114,6 +126,7 @@ impl Unstable {
     }
 
     /// Removes the snapshot from self if the index of the snapshot matches
+    ///如果快照索引匹配，则从自身中删除快照
     pub fn stable_snap_to(&mut self, idx: u64) {
         if self.snapshot.is_none() {
             return;
@@ -124,6 +137,7 @@ impl Unstable {
     }
 
     /// From a given snapshot, restores the snapshot to self, but doesn't unpack.
+    ///从给定的快照将快照还原到自身，但不解压缩。
     pub fn restore(&mut self, snap: Snapshot) {
         self.entries.clear();
         self.offset = snap.get_metadata().get_index() + 1;
@@ -131,19 +145,23 @@ impl Unstable {
     }
 
     /// Append entries to unstable, truncate local block first if overlapped.
+    ///将entry追加到unstable对象，如果重叠则首先截断本地块。
     pub fn truncate_and_append(&mut self, ents: &[Entry]) {
         let after = ents[0].get_index();
         if after == self.offset + self.entries.len() as u64 {
             // after is the next index in the self.entries, append directly
+            //在self.entries中的下一个索引之后，直接追加
             self.entries.extend_from_slice(ents);
         } else if after <= self.offset {
             // The log is being truncated to before our current offset
             // portion, so set the offset and replace the entries
+            //日志将被截断到当前偏移量部分之前，因此设置偏移量并替换条目
             self.offset = after;
             self.entries.clear();
             self.entries.extend_from_slice(ents);
         } else {
             // truncate to after and copy to self.entries then append
+            //截断到after并复制到self.entries然后追加
             let off = self.offset;
             self.must_check_outofbounds(off, after);
             self.entries.truncate((after - off) as usize);
@@ -152,6 +170,7 @@ impl Unstable {
     }
 
     /// Returns a slice of entries between the high and low.
+    /// 返回高和低之间的entry切片。
     ///
     /// # Panics
     ///
@@ -167,6 +186,7 @@ impl Unstable {
 
     /// Asserts the `hi` and `lo` values against each other and against the
     /// entries themselves.
+    ///将hi和lo值彼此相对并与entry本身相对应。
     pub fn must_check_outofbounds(&self, lo: u64, hi: u64) {
         if lo > hi {
             panic!("{} invalid unstable.slice {} > {}", self.tag, lo, hi)

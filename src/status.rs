@@ -33,24 +33,32 @@ use raft::{Raft, SoftState, StateRole};
 use storage::Storage;
 
 /// Represents the current status of the raft
+///表示raft的当前状态
 #[derive(Default)]
 pub struct Status {
     /// The ID of the current node.
+    ///当前节点的ID。
     pub id: u64,
     /// The hardstate of the raft, representing voted state.
+    ///raft的硬状态，表示投票状态。
     pub hs: HardState,
     /// The softstate of the raft, representing proposed state.
+    ///筏的软状态，表示建议的状态。
     pub ss: SoftState,
     /// The index of the last entry to have been applied.
+    ///要应用的最后一个条目的索引。
     pub applied: u64,
     /// The progress towards catching up and applying logs.
+    ///追上和应用日志的进度。
     pub progress: HashMap<u64, Progress>,
     /// The progress of learners in catching up and applying logs.
+    ///学习者在追赶和应用日志方面的进度。
     pub learner_progress: HashMap<u64, Progress>,
 }
 
 impl Status {
     /// Gets a copy of the current raft status.
+    ///获取当前raft状态的副本。
     pub fn new<T: Storage>(raft: &Raft<T>) -> Status {
         let mut s = Status {
             id: raft.id,
