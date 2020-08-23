@@ -107,7 +107,7 @@ pub trait Storage {
     /// so raft state machine could know that Storage needs some time to prepare
     /// snapshot and call snapshot later.
     ///返回最近的快照。
-     ///如果快照暂时不可用，则应返回SnapshotTemporarilyUnavailable，因此筏状态机可以知道存储需要一些时间来准备快照并稍后调用快照。
+     ///如果快照暂时不可用，则应返回SnapshotTemporarilyUnavailable，因此raft状态机可以知道存储需要一些时间来准备快照并稍后调用快照。
     fn snapshot(&self) -> Result<Snapshot>;
 }
 
@@ -196,11 +196,13 @@ impl MemStorageCore {
         pending_membership_change: Option<ConfChange>,
         data: Vec<u8>,
     ) -> Result<&Snapshot> {
+        //idx <= 当前快照index的最小值
         if idx <= self.snapshot.get_metadata().get_index() {
             return Err(Error::Store(StorageError::SnapshotOutOfDate));
         }
 
         let offset = self.entries[0].get_index();
+        //idx >= 存储的entry的最大index
         if idx > self.inner_last_index() {
             panic!(
                 "snapshot {} is out of bound lastindex({})",
@@ -264,14 +266,14 @@ impl MemStorageCore {
             return Ok(());
         }
         // truncate compacted entries
-        //截断压缩条目
+        //截断压缩条目,entries中最小index之前的日志截断不要
         let te: &[Entry] = if first > ents[0].get_index() {
             let start_ent = (first - ents[0].get_index()) as usize;
             &ents[start_ent..]
         } else {
             ents
         };
-
+        //entries中将此次添加的entry和之前存在的重复的entry剔除，然后将te中的数据添加到entries
         let offset = te[0].get_index() - self.entries[0].get_index();
         if self.entries.len() as u64 > offset {
             let mut new_entries: Vec<Entry> = vec![];
@@ -279,8 +281,10 @@ impl MemStorageCore {
             new_entries.extend_from_slice(te);
             self.entries = new_entries;
         } else if self.entries.len() as u64 == offset {
+            //如果正好相等，则正好全部替换
             self.entries.extend_from_slice(te);
         } else {
+            //否则，如果index不连续，则报错
             panic!(
                 "missing log entry [last: {}, append at: {}]",
                 self.inner_last_index(),

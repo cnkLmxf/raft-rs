@@ -47,7 +47,7 @@ pub struct Unstable {
     pub entries: Vec<Entry>,
 
     /// The offset from the vector index.
-    ///与向量索引的偏移量。
+    ///与向量索引的偏移量。基本偏移量，第一个记录的偏移量
     pub offset: u64,
 
     /// The tag to use when logging.
@@ -145,7 +145,7 @@ impl Unstable {
     }
 
     /// Append entries to unstable, truncate local block first if overlapped.
-    ///将entry追加到unstable对象，如果重叠则首先截断本地块。
+    ///将entry追加到unstable对象，如果重叠则首先截断本地块。两块entry index不相连会报错
     pub fn truncate_and_append(&mut self, ents: &[Entry]) {
         let after = ents[0].get_index();
         if after == self.offset + self.entries.len() as u64 {

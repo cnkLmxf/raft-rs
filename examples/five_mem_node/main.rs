@@ -201,12 +201,14 @@ fn on_ready(
 
     // Persistent raft logs. It's necessary because in `RawNode::advance` we stabilize
     // raft logs to the latest position.
+    //持久化raft logs
     if let Err(e) = raft_group.raft.raft_log.store.wl().append(ready.entries()) {
         error!("persist raft log fail: {:?}, need to retry or panic", e);
         return;
     }
 
     // Send out the messages come from the node.
+    //需要发送给其他node的消息
     for msg in ready.messages.drain(..) {
         let to = msg.get_to();
         if mailboxes[&to].send(msg).is_err() {
@@ -215,6 +217,7 @@ fn on_ready(
     }
 
     // Apply all committed proposals.
+    //应用所有已提交的proposals
     if let Some(committed_entries) = ready.committed_entries.take() {
         for entry in committed_entries {
             if entry.get_data().is_empty() {
@@ -226,6 +229,7 @@ fn on_ready(
                 let mut cc = ConfChange::new();
                 cc.merge_from_bytes(entry.get_data()).unwrap();
                 let node_id = cc.get_node_id();
+                //应用消息的内容到raft
                 match cc.get_change_type() {
                     ConfChangeType::AddNode => raft_group.raft.add_node(node_id).unwrap(),
                     ConfChangeType::RemoveNode => raft_group.raft.remove_node(node_id).unwrap(),
@@ -236,6 +240,7 @@ fn on_ready(
             } else {
                 // For normal proposals, extract the key-value pair and then
                 // insert them into the kv engine.
+                //对于普通引擎，持久化kv对 到kv引擎
                 let data = str::from_utf8(entry.get_data()).unwrap();
                 let reg = Regex::new("put ([0-9]+) (.+)").unwrap();
                 if let Some(caps) = reg.captures(&data) {
@@ -245,12 +250,14 @@ fn on_ready(
             if raft_group.raft.state == StateRole::Leader {
                 // The leader should response to the clients, tell them if their proposals
                 // succeeded or not.
+                //告诉客户端是否propose成功
                 let proposal = proposals.lock().unwrap().pop_front().unwrap();
                 proposal.propose_success.send(true).unwrap();
             }
         }
     }
     // Call `RawNode::advance` interface to update position flags in the raft.
+    //更新raft中的位置
     raft_group.advance(ready);
 }
 

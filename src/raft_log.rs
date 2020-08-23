@@ -222,7 +222,7 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Answers the question: Does this index belong to this term?
-    ///回答问题：该索引是否属于该术语？
+    ///回答问题：该索引是否属于该term？
     pub fn match_term(&self, idx: u64, term: u64) -> bool {
         self.term(idx).map(|t| t == term).unwrap_or(false)
     }
@@ -237,7 +237,7 @@ impl<T: Storage> RaftLog<T> {
       ///如果发现索引冲突，则表示恐慌。
     pub fn maybe_append(
         &mut self,
-        idx: u64,
+        idx: u64,//idx代表第一个ents消息之前的entry的大小
         term: u64,
         committed: u64,
         ents: &[Entry],
@@ -255,6 +255,7 @@ impl<T: Storage> RaftLog<T> {
                 let offset = idx + 1;
                 self.append(&ents[(conflict_idx - offset) as usize..]);
             }
+            //这里将committed置为leader的committed和last_new_index的较小值
             self.commit_to(cmp::min(committed, last_new_index));
             return Some(last_new_index);
         }

@@ -44,7 +44,7 @@ pub struct Config {
     /// Restarting raft from previous configuration will panic if
     /// peers is set.
     /// peer is private and only used for testing right now.
-    ///筏群集中所有节点（包括自身）的ID。 仅在启动新的raft群集时才应设置它。
+    ///raft群集中所有节点（包括自身）的ID。 仅在启动新的raft群集时才应设置它。
     ///如果设置了peers，则从先前的配置重新启动raft会panic。
     // peer是私有的，并且仅用于测试。
     pub peers: Vec<u64>,

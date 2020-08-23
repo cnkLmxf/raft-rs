@@ -573,6 +573,7 @@ impl<T: Storage> Raft<T> {
     }
 
     fn prepare_send_snapshot(&mut self, m: &mut Message, pr: &mut Progress, to: u64) -> bool {
+        //pr最近不活跃则不发送快照
         if !pr.recent_active {
             debug!(
                 "{} ignore sending snapshot to {} since it is not recently active",
@@ -582,6 +583,7 @@ impl<T: Storage> Raft<T> {
         }
 
         m.set_msg_type(MessageType::MsgSnapshot);
+        //如果获取snapshot错误，则不发送快照
         let snapshot_r = self.raft_log.snapshot();
         if let Err(e) = snapshot_r {
             if e == Error::Store(StorageError::SnapshotTemporarilyUnavailable) {
@@ -614,6 +616,7 @@ impl<T: Storage> Raft<T> {
             to,
             pr
         );
+        //将pr置为snapshot状态
         pr.become_snapshot(sindex);
         debug!(
             "{} paused sending replication messages to {} [{:?}]",
@@ -756,6 +759,7 @@ impl<T: Storage> Raft<T> {
     /// Post：检查是否是时候确定“共同共识”状态。
     pub fn commit_apply(&mut self, applied: u64) {
         #[allow(deprecated)]
+          //更新apply_index的值
         self.raft_log.applied_to(applied);
 
         // Check to see if we need to finalize a Joint Consensus state now.
@@ -765,7 +769,7 @@ impl<T: Storage> Raft<T> {
             .as_ref()
             .map(|v| Some(v.get_start_index()))
             .unwrap_or(None);
-
+        //如果membership发生改变的记录已经applied，则发送需要通知所有的node
         if let Some(index) = start_index {
             // Invariant: We know that if we have commited past some index, we can also commit that index.
             //不变量：我们知道，如果我们提交的内容超过某个索引，那么我们也可以提交该索引。
@@ -776,7 +780,7 @@ impl<T: Storage> Raft<T> {
             }
         }
     }
-
+    //添加最后的conf change的entry
     fn append_finalize_conf_change_entry(&mut self) {
         let mut conf_change = ConfChange::new();
         conf_change.set_change_type(ConfChangeType::FinalizeMembershipChange);
@@ -785,7 +789,8 @@ impl<T: Storage> Raft<T> {
         entry.set_entry_type(EntryType::EntryConfChange);
         entry.set_data(data);
         // Index/Term set here.
-        self.append_entry(&mut [entry]);
+        self.append_entry(&mut [entry]);//添加entry之后可能会更新commit
+        //根据每个节点的progress发送新添加的entry
         self.bcast_append();
     }
 
@@ -832,6 +837,7 @@ impl<T: Storage> Raft<T> {
         li = self.raft_log.append(es);
 
         let self_id = self.id;
+      //这里可能更新progress的matched和next_idx大小,更新了match的大小就有可能更新commit的大小，所以接下来调用maybe_commit用于更新commit
         self.mut_prs().get_mut(self_id).unwrap().maybe_update(li);
 
         // Regardless of maybe_commit's return, our caller will call bcastAppend.
@@ -859,12 +865,15 @@ impl<T: Storage> Raft<T> {
     ///返回true，表示可能需要处理一些准备情况。
     pub fn tick_election(&mut self) -> bool {
         self.election_elapsed += 1;
+        //没有超过了选举超时时间，或者选民中不包含自己，则返回false
         if !self.pass_election_timeout() || !self.promotable() {
             return false;
         }
-
+        //走到这里说明既超过了选举超时时间，选民中又包含自己
         self.election_elapsed = 0;
+        //构建选举的raftmessage
         let m = new_message(INVALID_ID, MessageType::MsgHup, Some(self.id));
+        //处理新消息
         self.step(m).is_ok();
         true
     }
@@ -880,24 +889,28 @@ impl<T: Storage> Raft<T> {
         let mut has_ready = false;
         if self.election_elapsed >= self.election_timeout {
             self.election_elapsed = 0;
+            //检查法定人数
             if self.check_quorum {
+                //构建检查法定人数的raft message
                 let m = new_message(INVALID_ID, MessageType::MsgCheckQuorum, Some(self.id));
                 has_ready = true;
                 self.step(m).is_ok();
             }
+            //如果当前raft为leader，并且存在leader迁移，则放弃该迁移
             if self.state == StateRole::Leader && self.lead_transferee.is_some() {
                 self.abort_leader_transfer()
             }
         }
-
+        //如果当前状态不是leader则返回是否ready了
         if self.state != StateRole::Leader {
             return has_ready;
         }
-
+        //如果headerbeat_elapsed超过心跳超时，则准备发送心跳
         if self.heartbeat_elapsed >= self.heartbeat_timeout {
             self.heartbeat_elapsed = 0;
             has_ready = true;
             let m = new_message(INVALID_ID, MessageType::MsgBeat, Some(self.id));
+            //处理发送心跳信息
             self.step(m).is_ok();
         }
         has_ready
@@ -1111,7 +1124,7 @@ impl<T: Storage> Raft<T> {
         if m.get_term() == 0 {
             // local message
             //本地消息
-        } else if m.get_term() > self.term {
+        } else if m.get_term() > self.term {//消息的term大于当前节点的term
             if m.get_msg_type() == MessageType::MsgRequestVote
                 || m.get_msg_type() == MessageType::MsgRequestPreVote
             {
@@ -1321,10 +1334,10 @@ impl<T: Storage> Raft<T> {
                     // the message (it ignores all out of date messages).
                     // The term in the original message and current local term are the
                     // same in the case of regular votes, but different for pre-votes.
-                    //当回复Msg {Pre，} Vote消息时，我们会包含消息中的术语，而不是本地术语。
+                    //当回复Msg {Pre，} Vote消息时，我们会包含消息中的term，而不是本地term。
                   //要了解为什么要考虑以前将单个节点分割开并且其本地术语为最新的情况。
-                  //如果我们包含本地术语（请记住，对于预投票，我们不会更新本地术语），另一端的（预）广告系列节点将继续忽略该消息（它将忽略所有过时的消息）。
-                  //在常规投票中，原始消息中的术语和当前本地术语相同，但预先投票中的术语不同。
+                  //如果我们包含本地term（请记住，对于预投票，我们不会更新本地term），另一端的（预）campaigning节点将继续忽略该消息（它将忽略所有过时的消息）。
+                  //在常规投票中，原始消息中的term和当前本地term相同，但预先投票中的term不同。
                     self.log_vote_approve(&m);
                     let mut to_send =
                         new_message(m.get_from(), vote_resp_msg_type(m.get_msg_type()), None);
@@ -1522,7 +1535,7 @@ impl<T: Storage> Raft<T> {
                 m.get_from(),
                 m.get_index()
             );
-
+            //发送被拒绝了则有可能需要调整match和next_index的大小
             if pr.maybe_decr_to(m.get_index(), m.get_reject_hint()) {
                 debug!(
                     "{} decreased progress of {} to [{:?}]",
@@ -1807,6 +1820,7 @@ impl<T: Storage> Raft<T> {
 
                 for (i, e) in m.mut_entries().iter_mut().enumerate() {
                     if e.get_entry_type() == EntryType::EntryConfChange {
+                        //已经存在
                         if self.has_pending_conf() {
                             info!(
                                 "propose conf {:?} ignored since pending unapplied \
@@ -1877,7 +1891,7 @@ impl<T: Storage> Raft<T> {
             }
             _ => {}
         }
-
+        //执行到这里说明是响应消息
         let mut send_append = false;
         let mut maybe_commit = false;
         let mut old_paused = false;
@@ -2107,6 +2121,7 @@ impl<T: Storage> Raft<T> {
         let mut to_send = Message::new();
         to_send.set_to(m.get_from());
         to_send.set_msg_type(MessageType::MsgAppendResponse);
+        //这里follower进行添加entry
         match self.raft_log.maybe_append(
             m.get_index(),
             m.get_log_term(),

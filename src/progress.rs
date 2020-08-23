@@ -521,7 +521,7 @@ impl ProgressSet {
 
     /// Returns the maximal committed index for the cluster.
     /// 返回集群的最大提交索引。
-    ///
+    /// match过半的index都可作为已提交的index
     /// Eg. If the matched indexes are [2,2,2,4,5], it will return 2.
     pub fn maximal_committed_index(&self) -> u64 {
         let mut matched = self.sort_buffer.borrow_mut();
@@ -858,7 +858,7 @@ impl Progress {
     }
 
     /// Changes the progress to a snapshot.
-    ///将进度更改为快照。
+    ///将progress更改为快照。
     pub fn become_snapshot(&mut self, snapshot_idx: u64) {
         self.reset_state(ProgressState::Snapshot);
         self.pending_snapshot = snapshot_idx;
@@ -880,6 +880,7 @@ impl Progress {
     /// Returns false if the given n index comes from an outdated message.
     /// Otherwise it updates the progress and returns true.
     ///如果给定的n索引来自过期消息，则返回false。 否则，它将更新progress并返回true。
+    /// 更新progress的匹配index大小，后续可能会更新commit_idx
     pub fn maybe_update(&mut self, n: u64) -> bool {
         let need_update = self.matched < n;
         if need_update {

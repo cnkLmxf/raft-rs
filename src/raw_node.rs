@@ -300,9 +300,11 @@ impl<T: Storage> RawNode<T> {
         }
         if !rd.entries.is_empty() {
             let e = rd.entries.last().unwrap();
+            //持久化unstable中的entry数据
             self.raft.raft_log.stable_to(e.get_index(), e.get_term());
         }
         if rd.snapshot != Snapshot::new() {
+            //持久化unstable中的snapshot数据
             self.raft
                 .raft_log
                 .stable_snap_to(rd.snapshot.get_metadata().get_index());
@@ -404,6 +406,7 @@ impl<T: Storage> RawNode<T> {
         if is_local_msg(m.get_msg_type()) {
             return Err(Error::StepLocalMsg);
         }
+        //如果外地发送者存在于processor中，或者不是response消息，则处理该消息
         if self.raft.prs().get(m.get_from()).is_some() || !is_response_msg(m.get_msg_type()) {
             return self.raft.step(m);
         }
@@ -431,25 +434,33 @@ impl<T: Storage> RawNode<T> {
     ///给定一个索引，可以确定从那时起是否有就绪状态。
     pub fn has_ready_since(&self, applied_idx: Option<u64>) -> bool {
         let raft = &self.raft;
+        //待发送的msgs不为空，或者unstable_entries不为空返回true
         if !raft.msgs.is_empty() || raft.raft_log.unstable_entries().is_some() {
             return true;
         }
+        //如果raft的read_states不为空返回true
         if !raft.read_states.is_empty() {
             return true;
         }
+        //snapshot为空则返回true
         if self.get_snap().map_or(false, |s| !is_empty_snap(s)) {
             return true;
         }
+
         let has_unapplied_entries = match applied_idx {
+            //如果applied_idx没有指定则通过是否存在next entries判断
             None => raft.raft_log.has_next_entries(),
+            //如果指定applied_idx，则判断从applied_idx开始是否有entries
             Some(idx) => raft.raft_log.has_next_entries_since(idx),
         };
         if has_unapplied_entries {
             return true;
         }
+        //soft_state发生改变返回true
         if raft.soft_state() != self.prev_ss {
             return true;
         }
+        //hs不为空，并且发生了改变则返回true
         let hs = raft.hard_state();
         if hs != HardState::new() && hs != self.prev_hs {
             return true;
@@ -476,6 +487,9 @@ impl<T: Storage> RawNode<T> {
     /// last Ready results.
     /// Advance通知RawNode该应用程序已应用并在最近的Ready结果中保存了进度。
     pub fn advance(&mut self, rd: Ready) {
+        //更新raft内部的状态，整个执行流程为，raft接收到请求进行一系列操作，等到条件满足了生成msg存到msgs中，
+        //等到ready轮序的时候会从中拿到msgs等的消息进行处理，处理的过程为更新外部存储或者持久化的过程，
+        //过程结束后更新raft的状态，即这里的执行
         self.advance_append(rd);
         let commit_idx = self.prev_hs.get_commit();
         if commit_idx != 0 {
@@ -499,6 +513,7 @@ impl<T: Storage> RawNode<T> {
     ///追加并提交就绪值。
     #[inline]
     pub fn advance_append(&mut self, rd: Ready) {
+        //提交ready ,更新本地raft的状态
         self.commit_ready(rd);
     }
 

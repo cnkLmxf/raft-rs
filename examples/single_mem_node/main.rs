@@ -87,9 +87,12 @@ fn main() {
     loop {
         match receiver.recv_timeout(timeout) {
             Ok(Msg::Propose { id, cb }) => {
+                //将请求的callback添加到cbs
                 cbs.insert(id, cb);
+                //对该消息propose
                 r.propose(vec![], vec![id]).unwrap();
             }
+            //如果发送过来的是raft消息，直接执行step处理消息
             Ok(Msg::Raft(m)) => r.step(m).unwrap(),
             Err(RecvTimeoutError::Timeout) => (),
             Err(RecvTimeoutError::Disconnected) => return,
@@ -127,6 +130,7 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u8, ProposeCallback>)
 
     if !raft::is_empty_snap(ready.snapshot()) {
         // This is a snapshot, we need to apply the snapshot at first.
+        //应用snapshot到存储对象
         r.mut_store()
             .wl()
             .apply_snapshot(ready.snapshot().clone())
@@ -135,17 +139,20 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u8, ProposeCallback>)
 
     if !ready.entries().is_empty() {
         // Append entries to the Raft log
+        //应用entris到 raft log
         r.mut_store().wl().append(ready.entries()).unwrap();
     }
 
     if let Some(hs) = ready.hs() {
         // Raft HardState changed, and we need to persist it.
+        //持久化hardstate
         r.mut_store().wl().set_hardstate(hs.clone());
     }
 
     if !is_leader {
         // If not leader, the follower needs to reply the messages to
         // the leader after appending Raft entries.
+        //如果不是leader，则需要给leader回复已经接收到消息
         let msgs = ready.messages.drain(..);
         for _msg in msgs {
             // Send messages to other peers.
@@ -157,13 +164,14 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u8, ProposeCallback>)
         for entry in committed_entries {
             // Mostly, you need to save the last apply index to resume applying
             // after restart. Here we just ignore this because we use a Memory storage.
+            //大多数情况下我们需要保存最后apply的index，保证重启后重新获取applying
             _last_apply_index = entry.get_index();
 
             if entry.get_data().is_empty() {
                 // Emtpy entry, when the peer becomes Leader it will send an empty entry.
                 continue;
             }
-
+            //对所有committed的entries执行回调
             if entry.get_entry_type() == EntryType::EntryNormal {
                 if let Some(cb) = cbs.remove(entry.get_data().get(0).unwrap()) {
                     cb();
@@ -175,6 +183,7 @@ fn on_ready(r: &mut RawNode<MemStorage>, cbs: &mut HashMap<u8, ProposeCallback>)
     }
 
     // Advance the Raft
+    //通知最近的ready已经处理完毕
     r.advance(ready);
 }
 
@@ -199,6 +208,7 @@ fn send_propose(sender: mpsc::Sender<Msg>) {
             .unwrap();
 
         let n = r1.recv().unwrap();
+        //接收到0说明发送成功
         assert_eq!(n, 0);
 
         println!("receive the propose callback");

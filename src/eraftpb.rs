@@ -930,7 +930,7 @@ pub struct Message {
     pub from: u64,
     pub term: u64,
     pub log_term: u64,
-    pub index: u64,
+    pub index: u64,//entry数组的的开始index
     pub entries: ::protobuf::RepeatedField<Entry>,
     pub commit: u64,
     pub snapshot: ::protobuf::SingularPtrField<Snapshot>,
