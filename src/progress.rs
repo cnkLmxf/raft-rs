@@ -561,6 +561,7 @@ impl ProgressSet {
         &self,
         votes: impl IntoIterator<Item = (&'a u64, &'a bool)>,
     ) -> CandidacyStatus {
+        //获取支持和返回的票数
         let (accepts, rejects) = votes.into_iter().fold(
             (HashSet::default(), HashSet::default()),
             |(mut accepts, mut rejects), (&id, &accepted)| {
@@ -572,7 +573,7 @@ impl ProgressSet {
                 (accepts, rejects)
             },
         );
-
+      //如果支持过半，则返回elected
         match self.next_configuration {
             Some(ref next) => {
                 if next.has_quorum(&accepts) && self.configuration.has_quorum(&accepts) {
@@ -614,6 +615,7 @@ impl ProgressSet {
         for (&_id, pr) in self.learners_mut() {
             pr.recent_active = false;
         }
+        //如果活跃的成员超过一半，并且如果有新configuration，并且活跃成员超过新配置的一半，则返回true
         self.configuration.has_quorum(&active) &&
             // If `next` is `None` we don't consider it, so just `true` it.
             self.next_configuration.as_ref().map(|next| next.has_quorum(&active)).unwrap_or(true)

@@ -138,13 +138,17 @@ impl Ready {
         prev_hs: &HardState,
         since_idx: Option<u64>,
     ) -> Ready {
+        //
         let mut rd = Ready {
+            ///返回未提交的entry切片。(unstable中的entries字段内容)
             entries: raft.raft_log.unstable_entries().unwrap_or(&[]).to_vec(),
             ..Default::default()
         };
+        //需要发送的消息
         if !raft.msgs.is_empty() {
             mem::swap(&mut raft.msgs, &mut rd.messages);
         }
+        //记录已applied字段后所有已提交的entry（大部分节点已经同步）
         rd.committed_entries = Some(
             (match since_idx {
                 None => raft.raft_log.next_entries(),
@@ -153,19 +157,23 @@ impl Ready {
             .unwrap_or_else(Vec::new),
         );
         let ss = raft.soft_state();
+        //soft state发送变化
         if &ss != prev_ss {
             rd.ss = Some(ss);
         }
         let hs = raft.hard_state();
+        //hard state发送变化
         if &hs != prev_hs {
             if hs.get_vote() != prev_hs.get_vote() || hs.get_term() != prev_hs.get_term() {
                 rd.must_sync = true;
             }
             rd.hs = Some(hs);
         }
+        //unstable结构中snapshot不为空
         if raft.raft_log.get_unstable().snapshot.is_some() {
             rd.snapshot = raft.raft_log.get_unstable().snapshot.clone().unwrap();
         }
+        //读请求不为空
         if !raft.read_states.is_empty() {
             rd.read_states = raft.read_states.clone();
         }
@@ -576,7 +584,9 @@ impl<T: Storage> RawNode<T> {
         let mut m = Message::new();
         m.set_msg_type(MessageType::MsgReadIndex);
         let mut e = Entry::new();
+        //data中存储的为要请求的key
         e.set_data(rctx);
+        //将所有要请求的key放入到entries中
         m.set_entries(RepeatedField::from_vec(vec![e]));
         self.raft.step(m).is_ok();
     }

@@ -678,10 +678,11 @@ impl<T: Storage> Raft<T> {
                 term,
                 ents,
             );
-            if !self.prepare_send_snapshot(&mut m, pr, to) {
+            if !self.prepare_send_snapshot(&mut m, pr, to) {//这里指定发送的消息为快照类型
                 return;
             }
         } else {
+            //这里指定的消息为MsgAppend类型
             self.prepare_send_entries(&mut m, pr, term.unwrap(), ents.unwrap());
         }
         self.send(m);
@@ -728,7 +729,7 @@ impl<T: Storage> Raft<T> {
         let ctx = self.read_only.last_pending_request_ctx();
         self.bcast_heartbeat_with_ctx(ctx)
     }
-
+    //带着读请求中的key进行广播
     #[cfg_attr(feature = "cargo-clippy", allow(clippy::needless_pass_by_value))]
     fn bcast_heartbeat_with_ctx(&mut self, ctx: Option<Vec<u8>>) {
         let self_id = self.id;
@@ -1068,6 +1069,7 @@ impl<T: Storage> Raft<T> {
             self.id, vote_msg, self_id, self.term
         );
         self.register_vote(self_id, acceptance);
+        //如果获得了大多数的投票则进入下一状态，如果是leader transfer ,则直接变成leader  (此判断只有一个节点的时候会成功)
         if let CandidacyStatus::Elected = self.prs().candidacy_status(&self.votes) {
             // We won the election after voting for ourselves (which must mean that
             // this is a single-node cluster). Advance to the next state.
@@ -1096,6 +1098,7 @@ impl<T: Storage> Raft<T> {
                     id,
                     self.term
                 );
+                //如果竞争类型是CAMPAIGN_PRE_ELECTION，则发送MsgRequestPreVote类型的请求，CAMPAIGN_TRANSFER和CAMPAIGN_ELECTION的竞争发送MsgRequestVote请求
                 let mut m = new_message(id, vote_msg, None);
                 m.set_term(term);
                 m.set_index(self.raft_log.last_index());
@@ -1605,7 +1608,7 @@ impl<T: Storage> Raft<T> {
             pr.resume();
 
             // free one slot for the full inflights window to allow progress.
-            //在整个飞行窗口中释放一个插槽以允许进度。
+            //在整个飞行窗口中释放一个插槽以允许progress。
             if pr.state == ProgressState::Replicate && pr.ins.full() {
                 pr.ins.free_first_one();
             }
@@ -1617,27 +1620,29 @@ impl<T: Storage> Raft<T> {
                 return;
             }
         }
-
+        //接收到heartbeat的ack不满足半数以上
         if !prs.has_quorum(&self.read_only.recv_ack(m)) {
             return;
         }
-
+        //走到这一步说明readIndex请求已经接收到半数以上的节点的回应
         let rss = self.read_only.advance(m);
         for rs in rss {
             let mut req = rs.req;
             if req.get_from() == INVALID_ID || req.get_from() == self.id {
-                // from local member
+                // from local member,本节点的raw_node发起的readIndexReq
                 let rs = ReadState {
                     index: rs.index,
                     request_ctx: req.take_entries()[0].take_data(),
                 };
                 self.read_states.push(rs);
             } else {
+                //如果是从其他节点发送的readIndexReq转发到leader这的请求，需要将该请求最后转发给原始请求节点
                 let mut to_send = Message::new();
                 to_send.set_to(req.get_from());
                 to_send.set_msg_type(MessageType::MsgReadIndexResp);
                 to_send.set_index(rs.index);
                 to_send.set_entries(req.take_entries());
+                //需要将msgReadIndexResp发送给其接收方
                 *more_to_send = Some(to_send);
             }
         }
@@ -1660,6 +1665,7 @@ impl<T: Storage> Raft<T> {
                 );
                 return;
             }
+            //如果上一次处理的leadertransfer还没有处理完，这次由发送了一个leader transfer，则停止上一个leader transfer
             self.abort_leader_transfer();
             info!(
                 "{} [term {}] abort previous transferring leadership to {}",
@@ -1687,13 +1693,14 @@ impl<T: Storage> Raft<T> {
         self.election_elapsed = 0;
         self.lead_transferee = Some(lead_transferee);
         let pr = prs.get_mut(from).unwrap();
+        //如果所有的消息都已经同步给未来的leader，则直接发送timeout消息就可以，不需要发送任何消息
         if pr.matched == self.raft_log.last_index() {
             self.send_timeout_now(lead_transferee);
             info!(
                 "{} sends MsgTimeoutNow to {} immediately as {} already has up-to-date log",
                 self.tag, lead_transferee, lead_transferee
             );
-        } else {
+        } else {//否则需要连带发送消息到未来的leader
             self.send_append(lead_transferee, pr);
         }
     }
@@ -1779,7 +1786,7 @@ impl<T: Storage> Raft<T> {
 
     fn step_leader(&mut self, mut m: Message) -> Result<()> {
         // These message types do not require any progress for m.From.
-        //这些消息类型不需要m.From的任何进展。
+        //这些消息类型不需要m.From的任何progress。
         match m.get_msg_type() {
             MessageType::MsgBeat => {
                 self.bcast_heartbeat();
@@ -1843,11 +1850,13 @@ impl<T: Storage> Raft<T> {
                     // Reject read only request when this leader has not committed any log entry
                     // in its term.
                     //当此领导者在其任期内未提交任何日志条目时，拒绝只读请求。
+                    // todo 为什么拒绝
                     return Ok(());
                 }
 
                 let mut self_set = HashSet::default();
                 self_set.insert(self.id);
+                //如果自己加入active quorum 不满足大于一半节点条件，则分条件处理
                 if !self.prs().has_quorum(&self_set) {
                     // thinking: use an interally defined context instead of the user given context.
                     // We can express this in terms of the term and index instead of
@@ -1857,7 +1866,9 @@ impl<T: Storage> Raft<T> {
                   //这将允许多次读取附带在同一条消息上。
                     match self.read_only.option {
                         ReadOnlyOption::Safe => {
+                            //获取要请求的key
                             let ctx = m.get_entries()[0].get_data().to_vec();
+                            //添加readindex请求到read_only
                             self.read_only.add_request(self.raft_log.committed, m);
                             self.bcast_heartbeat_with_ctx(Some(ctx));
                         }
@@ -1866,11 +1877,12 @@ impl<T: Storage> Raft<T> {
                             if m.get_from() == INVALID_ID || m.get_from() == self.id {
                                 // from local member
                                 let rs = ReadState {
-                                    index: read_index,
+                                    index: read_index,//当前已提交的Index
                                     request_ctx: m.take_entries()[0].take_data(),
                                 };
                                 self.read_states.push(rs);
                             } else {
+                                //从其他节点发起MsgReadIndex请求，转发到leader节点上来的
                                 let mut to_send = Message::new();
                                 to_send.set_to(m.get_from());
                                 to_send.set_msg_type(MessageType::MsgReadIndexResp);
@@ -1881,6 +1893,7 @@ impl<T: Storage> Raft<T> {
                         }
                     }
                 } else {
+                    //否则直接将读取请求放入当read_states，后续加以处理（有单独的线程读取该内容，然后处理）和msgs字段的地位相等
                     let rs = ReadState {
                         index: self.raft_log.committed,
                         request_ctx: m.take_entries()[0].take_data(),
@@ -1896,6 +1909,7 @@ impl<T: Storage> Raft<T> {
         let mut maybe_commit = false;
         let mut old_paused = false;
         let mut more_to_send = None;
+        //检查消息的发送情况
         self.check_message_with_progress(
             &mut m,
             &mut send_append,
@@ -1903,6 +1917,7 @@ impl<T: Storage> Raft<T> {
             &mut maybe_commit,
             &mut more_to_send,
         );
+      //处理需要更新commit字段的要求
         if maybe_commit {
             if self.maybe_commit() {
                 if self.should_bcast_commit() {
@@ -1915,13 +1930,14 @@ impl<T: Storage> Raft<T> {
                 send_append = true;
             }
         }
-
+        //处理需要发送给其他节点的数据
         if send_append {
             let from = m.get_from();
             let mut prs = self.take_prs();
             self.send_append(from, prs.get_mut(from).unwrap());
             self.set_prs(prs);
         }
+        //处理转发的请求
         if let Some(to_send) = more_to_send {
             self.send(to_send)
         }

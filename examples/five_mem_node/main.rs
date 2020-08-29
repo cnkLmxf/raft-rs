@@ -124,6 +124,7 @@ struct Node {
     mailboxes: HashMap<u64, Sender<Message>>,
     // Key-value pairs after applied. `MemStorage` only contains raft logs,
     // so we need an additional storage engine.
+    //apply后的键/值对。 “ MemStorage”仅包含raft日志，因此我们需要一个附加的存储引擎。
     kv_pairs: HashMap<u16, String>,
 }
 

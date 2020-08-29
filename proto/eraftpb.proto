@@ -46,25 +46,26 @@ message Snapshot {
 }
 
 enum MessageType {
-    MsgHup = 0;
-    MsgBeat = 1;
-    MsgPropose = 2;
-    MsgAppend = 3;
-    MsgAppendResponse = 4;
-    MsgRequestVote = 5;
-    MsgRequestVoteResponse = 6;
-    MsgSnapshot = 7;
-    MsgHeartbeat = 8;
-    MsgHeartbeatResponse = 9;
-    MsgUnreachable = 10;
-    MsgSnapStatus = 11;
-    MsgCheckQuorum = 12;
-    MsgTransferLeader = 13;
-    MsgTimeoutNow = 14;
-    MsgReadIndex = 15;
-    MsgReadIndexResp = 16;
-    MsgRequestPreVote = 17;
-    MsgRequestPreVoteResponse = 18;
+    MsgHup = 0; //由非leader自身产生（周期检测程序生成），一般非leader用于发送给其他节点。如果意外情况下leader被告知需要发送该消息类型，则忽略该种消息
+    MsgBeat = 1; //由leader自身产生（周期检测程序生成），leader的专属消息，该消息告诉leader其需要广播心跳到其他节点
+    MsgPropose = 2;//由客户端产生，非leader接收到该种消息转发给leader ,leader接收到该中消息进行处理该种消息
+    MsgAppend = 3; //由leader产生消息发送给其他非leader节点完成同步
+    MsgAppendResponse = 4;//由非leader产生，非leader发送给leader
+    MsgRequestVote = 5; //非leader产生MsgHup之后，自己发起选举，如果prevote打开，则先发送MsgRequestPreVote，接收到大多数的回应之后再发送MsgRequestVote
+    MsgRequestVoteResponse = 6; // 非发送MsgRequestVote的节点收到MsgRequestVote消息后根据自己的状态返回是否支持选举,并且会重置自己的election_elapsed，并设置自己的选举人为vote选举的节点，prevote不会改变自己的任何状态
+    MsgSnapshot = 7; //由leader产生发送该消息，follower和candidate接收该消息
+    MsgHeartbeat = 8; //由leader产生，非leader接收到心跳信息
+    MsgHeartbeatResponse = 9;//非leader处理leader发送的心跳信息，更新自己的状态后并返回
+    MsgUnreachable = 10;//由上层模块确定哪个节点不可达，然后封装成一个消息，如果是leader就处理该消息，如果节点不可达，则将其对应的progress设置为probe
+    MsgSnapStatus = 11;//由上层模块确定快照的发送状态，然后封装成一个消息，如果是leader就处理该消息，根据结果更新progress的状态，和MsgUnreachable类似
+    MsgCheckQuorum = 12;//由leader自身产生（周期检测程序生成），并由自身处理，如果开启checkQuorum模式则根据votes字段中的progress的recent_active字段检查活跃的成员个数，如果超过一半则返回true
+    MsgTransferLeader = 13; //由上层模块产生该消息，非leader接收到该种消息转发给leader ,leader接收到该中消息进行处理该种消息，如果消息已经完全同步则直接发送timeout类型的消息通知竞争选举，否则发送普通的MsgAppend消息到未来的leader上先进行数据同步，当数据同步完成，当前leader根据MsgAppendResponse执行回调，回调中判断满足transfer条件的时候(数据完全同步，则发送timeout请求到未来的leader)
+    //在以下情况会停止leader转移：1、在election_timeout周期内未完成数据同步。2、未来的leader节点下线了。3还未完成leader迁移由出现新的转移请求，则放弃该转移。【在变换角色的时候会清空所有的leader转移请求】
+    MsgTimeoutNow = 14; //由leader产生，未来leader节点满足迁移条件则发送该消息到未来leader节点
+    MsgReadIndex = 15; //执行读取请求的时候，由上层模块产生，非leader接收到该种消息转发给leader ,leader接收到该中消息进行处理该种消息（如果可直接处理则返回数据，如果不能处理放入readstatus中，该字段和msgs字段地位相同，由单独的线程处理其中的内容封装成Ready交由上游处理）
+    MsgReadIndexResp = 16; //如果leader接收到MsgReadIndex请求直接处理，根据safe或者LeaseBased模式执行相应的流程直到满足返回MsgReadIndexResp，如果MsgReadIndex是leader自己发起的，则不需要发送MsgReadIndexResp，将请求放入read_state字段中即可（和msgs字段同等地位），如果MsgReadIndex由follower转发给leader，则leader会发送MsgReadIndexResp给对应的节点，对应的节点接收到MsgReadIndexResp将读请求写入其自己的read_state字段中
+    MsgRequestPreVote = 17; //非leader产生MsgHup之后，自己发起选举，如果prevote打开，则先发送MsgRequestPreVote
+    MsgRequestPreVoteResponse = 18; // 非发送MsgRequestPreVote的节点收到MsgRequestPreVote消息后根据自己的状态返回是否支持选举
 }
 
 message Message {

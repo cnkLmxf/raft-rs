@@ -75,6 +75,7 @@ pub struct ReadState {
     pub request_ctx: Vec<u8>,
 }
 
+//此结构用于记录执行读取请求前接收到其他节点的心跳的响应个数等内容
 #[derive(Default, Debug, Clone)]
 pub struct ReadIndexStatus {
     pub req: Message,
@@ -110,17 +111,20 @@ impl ReadOnly {
     pub fn add_request(&mut self, index: u64, m: Message) {
         let ctx = {
             let key = m.get_entries()[0].get_data();
+            //如果正在处理该key则直接返回
             if self.pending_read_index.contains_key(key) {
                 return;
             }
             key.to_vec()
         };
         let status = ReadIndexStatus {
-            req: m,
-            index,
-            acks: HashSet::default(),
+            req: m,//请求内容
+            index,//已提交的index
+            acks: HashSet::default(),//请求的ack类型
         };
+        //将key及其请求状态建立映射
         self.pending_read_index.insert(ctx.clone(), status);
+        //将key加入到队列
         self.read_index_queue.push_back(ctx);
     }
 

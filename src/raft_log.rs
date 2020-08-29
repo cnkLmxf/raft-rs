@@ -356,7 +356,7 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Returns slice of entries that are not committed.
-    ///返回未提交的条目切片。
+    ///返回未提交的entry切片。
     pub fn unstable_entries(&self) -> Option<&[Entry]> {
         if self.unstable.entries.is_empty() {
             return None;
