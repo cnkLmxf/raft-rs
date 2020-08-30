@@ -241,7 +241,7 @@ impl Ready {
 /// The methods of this struct correspond to the methods of Node and are described
 /// more fully there.
 /// RawNode是线程不安全的节点。
-///此结构的方法与Node的方法相对应，并在此处进行了更全面的描述。
+///此结构的方法与etcd-raft中Node接口的方法相对应，并在此处进行了更全面的描述。
 pub struct RawNode<T: Storage> {
     /// The internal raft state.
     ///内部raft状态。
@@ -296,11 +296,13 @@ impl<T: Storage> RawNode<T> {
         }
         Ok(rn)
     }
-
+    //更新softstate,hardstate,unstable entry index, unstable snapshot meta,appied index,read_state
     fn commit_ready(&mut self, rd: Ready) {
+      //更新softstate
         if rd.ss.is_some() {
             self.prev_ss = rd.ss.unwrap();
         }
+        //更新hardstate
         if let Some(e) = rd.hs {
             if e != HardState::new() {
                 self.prev_hs = e;
@@ -308,15 +310,16 @@ impl<T: Storage> RawNode<T> {
         }
         if !rd.entries.is_empty() {
             let e = rd.entries.last().unwrap();
-            //持久化unstable中的entry数据
+            //设置持久化的index，即更新unstable中的起始index
             self.raft.raft_log.stable_to(e.get_index(), e.get_term());
         }
         if rd.snapshot != Snapshot::new() {
-            //持久化unstable中的snapshot数据
+            //更新snapshot的持久化位置，即更新unstable中的snapshot的meta
             self.raft
                 .raft_log
                 .stable_snap_to(rd.snapshot.get_metadata().get_index());
         }
+        //清空读请求
         if !rd.read_states.is_empty() {
             self.raft.read_states.clear();
         }
