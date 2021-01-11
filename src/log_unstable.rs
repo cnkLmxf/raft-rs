@@ -120,6 +120,7 @@ impl Unstable {
 
         if t.unwrap() == term && idx >= self.offset {
             let start = idx + 1 - self.offset;
+            //截取为后半段数据
             self.entries.drain(..start as usize);
             self.offset = idx + 1;
         }

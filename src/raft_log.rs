@@ -159,7 +159,7 @@ impl<T: Storage> RaftLog<T> {
     /// # Panics
     ///
     /// Panics if the store doesn't have a first index.
-    ///如果商店没有第一个索引，则会感到恐慌。
+    ///如果商店没有第一个索引，则会感到恐慌。firstindex是所有log中的第一个，即storage中的第一条log
     pub fn first_index(&self) -> u64 {
         match self.unstable.maybe_first_index() {
             Some(idx) => idx,
@@ -173,7 +173,7 @@ impl<T: Storage> RaftLog<T> {
     /// # Panics
     ///
     /// Panics if the store doesn't have a last index.
-    ///如果商店没有最后一个索引，则会感到恐慌。
+    ///如果store没有最后一个索引，则会感到恐慌。(返回的是最新的index，可能还没提交)
     pub fn last_index(&self) -> u64 {
         match self.unstable.maybe_last_index() {
             Some(idx) => idx,
@@ -222,7 +222,7 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Answers the question: Does this index belong to this term?
-    ///回答问题：该索引是否属于该term？
+    ///回答问题：该索引是否属于该term？找不到也返回false
     pub fn match_term(&self, idx: u64, term: u64) -> bool {
         self.term(idx).map(|t| t == term).unwrap_or(false)
     }
@@ -237,7 +237,7 @@ impl<T: Storage> RaftLog<T> {
       ///如果发现索引冲突，则表示恐慌。
     pub fn maybe_append(
         &mut self,
-        idx: u64,//idx代表第一个ents消息之前的entry的大小
+        idx: u64,//idx代表第一个ents消息之前的entry的index
         term: u64,
         committed: u64,
         ents: &[Entry],
@@ -253,9 +253,10 @@ impl<T: Storage> RaftLog<T> {
                 )
             } else {
                 let offset = idx + 1;
+                //将冲突index之后的数据追加到当前节点
                 self.append(&ents[(conflict_idx - offset) as usize..]);
             }
-            //这里将committed置为leader的committed和last_new_index的较小值
+            //这里将commitid置为leader的committed和last_new_index的较小值，last_new_index可能比commited小
             self.commit_to(cmp::min(committed, last_new_index));
             return Some(last_new_index);
         }
@@ -440,7 +441,7 @@ impl<T: Storage> RaftLog<T> {
     }
 
     /// Returns the current snapshot
-    ///返回当前快照
+    ///返回当前快照，先从unstable中找，如果如果unstable中不存在则在storage中找
     pub fn snapshot(&self) -> Result<Snapshot> {
         self.unstable
             .snapshot
@@ -474,6 +475,7 @@ impl<T: Storage> RaftLog<T> {
     /// Attempts to commit the index and term and returns whether it did.
     ///尝试提交索引和术语，并返回是否这样做。
     pub fn maybe_commit(&mut self, max_index: u64, term: u64) -> bool {
+        //记录要和当前term匹配才能提交，否则可能出现日志overwrite现象
         if max_index > self.committed && self.term(max_index).unwrap_or(0) == term {
             debug!("Committing index {}", max_index);
             self.commit_to(max_index);

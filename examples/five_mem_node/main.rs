@@ -202,7 +202,7 @@ fn on_ready(
 
     // Persistent raft logs. It's necessary because in `RawNode::advance` we stabilize
     // raft logs to the latest position.
-    //持久化raft logs
+    //本地持久化raft logs
     if let Err(e) = raft_group.raft.raft_log.store.wl().append(ready.entries()) {
         error!("persist raft log fail: {:?}, need to retry or panic", e);
         return;

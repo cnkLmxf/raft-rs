@@ -230,16 +230,21 @@ impl ProgressSet {
         max_inflight: usize,
     ) -> Self {
         let mut prs = ProgressSet::new();
+        //初始的时候统一设置为最新的的index
         let pr = Progress::new(next_idx, max_inflight);
         meta.get_conf_state().get_nodes().iter().for_each(|id| {
+            //设置progress
             prs.progress.insert(*id, pr.clone());
+            //设置当前configuration的voter
             prs.configuration.voters.insert(*id);
         });
         meta.get_conf_state().get_learners().iter().for_each(|id| {
+            //设置progress
             prs.progress.insert(*id, pr.clone());
+          //设置当前configuration的learner
             prs.configuration.learners.insert(*id);
         });
-
+        //存在membership change
         if meta.pending_membership_change_index != 0 {
             let mut next_configuration = Configuration::with_capacity(0, 0);
             meta.get_pending_membership_change()
@@ -247,6 +252,7 @@ impl ProgressSet {
                 .iter()
                 .for_each(|id| {
                     prs.progress.insert(*id, pr.clone());
+                  //设置新的configuration中的voters
                     next_configuration.voters.insert(*id);
                 });
             meta.get_pending_membership_change()
@@ -254,8 +260,10 @@ impl ProgressSet {
                 .iter()
                 .for_each(|id| {
                     prs.progress.insert(*id, pr.clone());
+                    //设置新的configuration中的learner
                     next_configuration.learners.insert(*id);
                 });
+            //设置新的configuration
             prs.next_configuration = Some(next_configuration);
         }
         prs.assert_progress_and_configuration_consistent();

@@ -125,7 +125,7 @@ pub struct Ready {
     /// If it contains a MsgSnap message, the application MUST report back to raft
     /// when the snapshot has been received or has failed by calling ReportSnapshot.
     ///消息指定将条目提交到稳定存储后要发送的出站消息。
-    ///如果包含MsgSnap消息，则当收到快照或通过调用ReportSnapshot失败快照时，应用程序务必向筏报告。
+    ///如果包含MsgSnap消息，则当收到快照或通过调用ReportSnapshot失败快照时，应用程序务必向raft报告。
     pub messages: Vec<Message>,
 
     must_sync: bool,
@@ -148,7 +148,7 @@ impl Ready {
         if !raft.msgs.is_empty() {
             mem::swap(&mut raft.msgs, &mut rd.messages);
         }
-        //记录已applied字段后所有已提交的entry（大部分节点已经同步）
+        //记录appliedindex后所有已提交的entry（大部分节点已经同步）
         rd.committed_entries = Some(
             (match since_idx {
                 None => raft.raft_log.next_entries(),
@@ -296,7 +296,7 @@ impl<T: Storage> RawNode<T> {
         }
         Ok(rn)
     }
-    //更新softstate,hardstate,unstable entry index, unstable snapshot meta,appied index,read_state
+    //更新softstate,hardstate,unstable entry index, unstable snapshot meta,read_state （没有更新applied index） (更新raft本身的元数据)
     fn commit_ready(&mut self, rd: Ready) {
       //更新softstate
         if rd.ss.is_some() {
@@ -314,7 +314,7 @@ impl<T: Storage> RawNode<T> {
             self.raft.raft_log.stable_to(e.get_index(), e.get_term());
         }
         if rd.snapshot != Snapshot::new() {
-            //更新snapshot的持久化位置，即更新unstable中的snapshot的meta
+            //更新snapshot的持久化位置，即比较unstable中的snapshot的meta，如果一致，则删除unstable中的snapshot
             self.raft
                 .raft_log
                 .stable_snap_to(rd.snapshot.get_metadata().get_index());
@@ -438,6 +438,7 @@ impl<T: Storage> RawNode<T> {
     /// Ready returns the current point-in-time state of this RawNode.
     /// Ready返回此RawNode的当前时间点状态。
     pub fn ready(&mut self) -> Ready {
+        //这里传递的是之前的状态
         Ready::new(&mut self.raft, &self.prev_ss, &self.prev_hs, None)
     }
 
@@ -464,14 +465,15 @@ impl<T: Storage> RawNode<T> {
             //如果指定applied_idx，则判断从applied_idx开始是否有entries
             Some(idx) => raft.raft_log.has_next_entries_since(idx),
         };
+        //存在需要被apply的entry返回true
         if has_unapplied_entries {
             return true;
         }
-        //soft_state发生改变返回true
+        //soft_state发生改变返回true,ss包含leader_id,state_role
         if raft.soft_state() != self.prev_ss {
             return true;
         }
-        //hs不为空，并且发生了改变则返回true
+        //hs不为空，并且发生了改变则返回true ,hs包含term,vote,commit
         let hs = raft.hard_state();
         if hs != HardState::new() && hs != self.prev_hs {
             return true;
@@ -488,7 +490,7 @@ impl<T: Storage> RawNode<T> {
     }
 
     /// Grabs the snapshot from the raft if available.
-    ///从raft中抓取快照（如果有）。
+    ///从raft中抓取快照（如果有），snapshot房子unstable的snapshot属性中。
     #[inline]
     pub fn get_snap(&self) -> Option<&Snapshot> {
         self.raft.get_snap()
@@ -502,6 +504,7 @@ impl<T: Storage> RawNode<T> {
         //等到ready轮序的时候会从中拿到msgs等的消息进行处理，处理的过程为更新外部存储或者持久化的过程，
         //过程结束后更新raft的状态，即这里的执行
         self.advance_append(rd);
+        //这里使用prev_hs的commit是因为前边advance_append已经更新当前的hardstate到prev.hs
         let commit_idx = self.prev_hs.get_commit();
         if commit_idx != 0 {
             // In most cases, prevHardSt and rd.HardState will be the same
@@ -529,7 +532,7 @@ impl<T: Storage> RawNode<T> {
     }
 
     /// Advance apply to the passed index.
-    ///将高级应用于传递的索引。
+    ///推进apply到传递的索引。
     #[inline]
     pub fn advance_apply(&mut self, applied: u64) {
         self.commit_apply(applied);

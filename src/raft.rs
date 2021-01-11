@@ -562,7 +562,7 @@ impl<T: Storage> Raft<T> {
             // proposals are a way to forward to the leader and
             // should be treated as local message.
             // MsgReadIndex is also forwarded to leader.
-            //不要在MsgPropose上附加term，MsgReadIndex建议是转发给领导者的一种方法，应被视为本地消息。 MsgReadIndex也转发给领导者。
+            //不要在MsgPropose、MsgReadIndex上附加term，proposals建议是转发给领导者的一种方法，应被视为本地消息。 MsgReadIndex也转发给领导者。
             if m.get_msg_type() != MessageType::MsgPropose
                 && m.get_msg_type() != MessageType::MsgReadIndex
             {
@@ -634,6 +634,7 @@ impl<T: Storage> Raft<T> {
     ) {
         m.set_msg_type(MessageType::MsgAppend);
         m.set_index(pr.next_idx - 1);
+
         m.set_log_term(term);
         m.set_entries(RepeatedField::from_vec(ents));
         m.set_commit(self.raft_log.committed);
@@ -641,7 +642,9 @@ impl<T: Storage> Raft<T> {
             match pr.state {
                 ProgressState::Replicate => {
                     let last = m.get_entries().last().unwrap().get_index();
+                    //推进process的next_idx
                     pr.optimistic_update(last);
+                    //正在进行发送的请求
                     pr.ins.add(last);
                 }
                 ProgressState::Probe => pr.pause(),
@@ -656,6 +659,7 @@ impl<T: Storage> Raft<T> {
     /// Sends RPC, with entries to the given peer.
     ///发送RPC，并将条目发送到给定的对等方。
     pub fn send_append(&mut self, to: u64, pr: &mut Progress) {
+        //处以pause状态则不进行发送
         if pr.is_paused() {
             trace!(
                 "Skipping sending to {}, it's paused. Progress: {:?}",
@@ -678,6 +682,7 @@ impl<T: Storage> Raft<T> {
                 term,
                 ents,
             );
+            //将snapshot 装入message
             if !self.prepare_send_snapshot(&mut m, pr, to) {//这里指定发送的消息为快照类型
                 return;
             }
@@ -770,7 +775,7 @@ impl<T: Storage> Raft<T> {
             .as_ref()
             .map(|v| Some(v.get_start_index()))
             .unwrap_or(None);
-        //如果membership发生改变的记录已经applied，则发送需要通知所有的node
+        //如果membership发生改变的记录已经applied，则发送需要通知所有的node，只有leader需要做这个步骤
         if let Some(index) = start_index {
             // Invariant: We know that if we have commited past some index, we can also commit that index.
             //不变量：我们知道，如果我们提交的内容超过某个索引，那么我们也可以提交该索引。
@@ -1119,7 +1124,7 @@ impl<T: Storage> Raft<T> {
 
     /// Steps the raft along via a message. This should be called everytime your raft receives a
     /// message from a peer.
-    ///通过一条消息沿着木筏前进。 每当您的木筏收到同伴发送的消息时，都应调用此名称。
+    ///通过一条消息沿着raft 前进。 每当您的raft收到peer发送的消息时，都应调用此名称。
     pub fn step(&mut self, m: Message) -> Result<()> {
         // Handle the message term, which may result in our stepping down to a follower.
         //处理消息项，这可能会导致我们下台至关注者。
@@ -2042,6 +2047,7 @@ impl<T: Storage> Raft<T> {
                 self.send(m);
             }
             MessageType::MsgAppend => {
+                //接收到append消息就重置election_elapsed
                 self.election_elapsed = 0;
                 self.leader_id = m.get_from();
                 self.handle_append_entries(&m);
@@ -2254,15 +2260,18 @@ impl<T: Storage> Raft<T> {
         let next_idx = self.raft_log.last_index() + 1;
         let mut prs = ProgressSet::restore_snapmeta(meta, next_idx, self.max_inflight);
         prs.get_mut(self.id).unwrap().matched = next_idx - 1;
+        //自己是个learner ,但是voter中包含自己，则将自己置为非learner
         if self.is_learner && prs.configuration().voters().contains(&self.id) {
             self.is_learner = false;
         }
         self.prs = Some(prs);
         if meta.get_pending_membership_change_index() > 0 {
             let cs = meta.get_pending_membership_change().clone();
+            //存在membership change 则构建ConfChange对象并存储在pending_membership_change
             let mut conf_change = ConfChange::new();
             conf_change.set_change_type(ConfChangeType::BeginMembershipChange);
             conf_change.set_configuration(cs);
+            //设置confchange的index
             conf_change.set_start_index(meta.get_pending_membership_change_index());
             self.pending_membership_change = Some(conf_change);
         }
