@@ -136,6 +136,7 @@ impl<T: Storage> RaftLog<T> {
         // the valid term range is [index of dummy entry, last index]
         //有效期限范围是[虚拟条目的索引，最后一个索引]
         let dummy_idx = self.first_index() - 1;
+        //idx小于store中entry的第一条记录或者大于unstable中的最后一条entry则返回0代表没找到
         if idx < dummy_idx || idx > self.last_index() {
             return Ok(0u64);
         }
@@ -144,7 +145,9 @@ impl<T: Storage> RaftLog<T> {
             Some(term) => Ok(term),
             _ => self.store.term(idx).map_err(|e| {
                 match e {
+                    //store获取过程中发生了压缩
                     Error::Store(StorageError::Compacted)
+                    //storage不可用
                     | Error::Store(StorageError::Unavailable) => {}
                     _ => panic!("{} unexpected error: {:?}", self.tag, e),
                 }
@@ -159,10 +162,11 @@ impl<T: Storage> RaftLog<T> {
     /// # Panics
     ///
     /// Panics if the store doesn't have a first index.
-    ///如果商店没有第一个索引，则会感到恐慌。firstindex是所有log中的第一个，即storage中的第一条log
+    ///如果商店没有第一个索引，则会感到恐慌。firstindex是所有log中的第一个，即storage中的第一条log，snapshot之后的第一条
     pub fn first_index(&self) -> u64 {
         match self.unstable.maybe_first_index() {
             Some(idx) => idx,
+            //获取的是store中的第一条entry index,即snapshot后的那一条
             None => self.store.first_index().unwrap(),
         }
     }
@@ -454,6 +458,7 @@ impl<T: Storage> RaftLog<T> {
             panic!("{} invalid slice {} > {}", self.tag, low, high)
         }
         let first_index = self.first_index();
+        //low在storage中的snapshot中，则报压缩错误
         if low < first_index {
             return Some(Error::Store(StorageError::Compacted));
         }

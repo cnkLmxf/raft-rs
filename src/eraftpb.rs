@@ -368,7 +368,9 @@ pub struct SnapshotMetadata {
     pub conf_state: ::protobuf::SingularPtrField<ConfState>,
     pub pending_membership_change: ::protobuf::SingularPtrField<ConfState>,
     pub pending_membership_change_index: u64,
+    //last include index
     pub index: u64,
+    //last include term
     pub term: u64,
     // special fields
     pub unknown_fields: ::protobuf::UnknownFields,

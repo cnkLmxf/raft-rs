@@ -173,7 +173,7 @@ impl Ready {
         if raft.raft_log.get_unstable().snapshot.is_some() {
             rd.snapshot = raft.raft_log.get_unstable().snapshot.clone().unwrap();
         }
-        //读请求不为空
+        //读请求不为空，这里的读请求已经经过了大半的响应
         if !raft.read_states.is_empty() {
             rd.read_states = raft.read_states.clone();
         }
@@ -267,6 +267,7 @@ impl<T: Storage> RawNode<T> {
             rn.raft.become_follower(1, INVALID_ID);
             let mut ents = Vec::with_capacity(peers.len());
             for (i, peer) in peers.iter_mut().enumerate() {
+                //为每个peer 添加confChange记录
                 let mut cc = ConfChange::new();
                 cc.set_change_type(ConfChangeType::AddNode);
                 cc.set_node_id(peer.id);
@@ -282,8 +283,11 @@ impl<T: Storage> RawNode<T> {
                 e.set_data(data);
                 ents.push(e);
             }
+            //添加到 unstable中
             rn.raft.raft_log.append(&ents);
+            //设置committed,这里直接设置ents中
             rn.raft.raft_log.committed = ents.len() as u64;
+            //应用peer到raft中
             for peer in peers {
                 rn.raft.add_node(peer.id)?;
             }
@@ -417,7 +421,7 @@ impl<T: Storage> RawNode<T> {
         if is_local_msg(m.get_msg_type()) {
             return Err(Error::StepLocalMsg);
         }
-        //如果外地发送者存在于processor中，或者不是response消息，则处理该消息
+        //如果外地发送者存在于processor中，或者发送者不在processor中但是不是response消息，则处理该消息
         if self.raft.prs().get(m.get_from()).is_some() || !is_response_msg(m.get_msg_type()) {
             return self.raft.step(m);
         }
@@ -590,7 +594,7 @@ impl<T: Storage> RawNode<T> {
         let mut m = Message::new();
         m.set_msg_type(MessageType::MsgReadIndex);
         let mut e = Entry::new();
-        //data中存储的为要请求的key
+        //data中存储的为要请求的key和index
         e.set_data(rctx);
         //将所有要请求的key放入到entries中
         m.set_entries(RepeatedField::from_vec(vec![e]));

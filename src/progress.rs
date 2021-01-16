@@ -584,16 +584,18 @@ impl ProgressSet {
       //如果支持过半，则返回elected
         match self.next_configuration {
             Some(ref next) => {
-                if next.has_quorum(&accepts) && self.configuration.has_quorum(&accepts) {
+                //存在next_configuration则需要同时满足当前配置和next配置
+                if next.has_quorum(&accepts) && self.configuration.has_quorum(&accepts) { //超过一半同意
                     return CandidacyStatus::Elected;
-                } else if next.has_quorum(&rejects) || self.configuration.has_quorum(&rejects) {
+                } else if next.has_quorum(&rejects) || self.configuration.has_quorum(&rejects) {//否则表示没有赢得选举，超过一半不同意
                     return CandidacyStatus::Ineligible;
                 }
             }
             None => {
+                //如果没有next config，则满足当前的配置选举规则即可当选    ，这里是超过一半同意
                 if self.configuration.has_quorum(&accepts) {
                     return CandidacyStatus::Elected;
-                } else if self.configuration.has_quorum(&rejects) {
+                } else if self.configuration.has_quorum(&rejects) {//这里是超过一半不同意
                     return CandidacyStatus::Ineligible;
                 }
             }
@@ -623,7 +625,7 @@ impl ProgressSet {
         for (&_id, pr) in self.learners_mut() {
             pr.recent_active = false;
         }
-        //如果活跃的成员超过一半，并且如果有新configuration，并且活跃成员超过新配置的一半，则返回true
+        //如果活跃的成员超过一半，并且新配置configuration中的活跃成员超过新配置的一半，则返回true
         self.configuration.has_quorum(&active) &&
             // If `next` is `None` we don't consider it, so just `true` it.
             self.next_configuration.as_ref().map(|next| next.has_quorum(&active)).unwrap_or(true)
@@ -688,7 +690,7 @@ impl ProgressSet {
         let next = next.into();
         next.valid()?;
         // Demotion check.
-        //降级检查。
+        //降级检查。有从voter变为learners的则报错
         if let Some(&demoted) = self
             .configuration
             .voters
@@ -730,12 +732,14 @@ impl ProgressSet {
             None => Err(Error::NoPendingMembershipChange)?,
             Some(next) => {
                 {
+                    //获取下线的节点
                     let pending = self
                         .configuration
                         .voters()
                         .difference(next.voters())
                         .chain(self.configuration.learners().difference(next.learners()))
                         .cloned();
+                    //移除下线节点
                     for id in pending {
                         self.progress.remove(&id);
                     }
@@ -875,14 +879,14 @@ impl Progress {
     }
 
     /// Sets the snapshot to failure.
-    ///将快照设置为失败。
+    ///将快照设置为失败。即没有pending的snapshot了
     pub fn snapshot_failure(&mut self) {
         self.pending_snapshot = 0;
     }
 
     /// Unsets pendingSnapshot if Match is equal or higher than
     /// the pendingSnapshot
-    ///如果Match等于或高于endingSnapshot，则取消设置pending快照
+    ///如果Match等于或高于pendingSnapshot，则取消设置pending快照
     pub fn maybe_snapshot_abort(&self) -> bool {
         self.state == ProgressState::Snapshot && self.matched >= self.pending_snapshot
     }
@@ -919,24 +923,26 @@ impl Progress {
         if self.state == ProgressState::Replicate {
             // the rejection must be stale if the progress has matched and "rejected"
             // is smaller than "match".
-            //如果进度已匹配并且“rejected”小于“matched”，则rejection必须是过期的。
+            //“rejected”小于“matched”，则rejection必须是过期的。因为正常reject = matched+1
             if rejected <= self.matched {
                 return false;
             }
+            //重设自己的next_idx,重发
             self.next_idx = self.matched + 1;
             return true;
         }
-
+        //走到这里说明不是Replicate状态，可能是Probe和Snapshot状态
         // the rejection must be stale if "rejected" does not match next - 1
         //如果下一个与“ rejected”不匹配，则拒绝必须是过期的-1
         if self.next_idx == 0 || self.next_idx - 1 != rejected {
             return false;
         }
-
+        //设置next_idx为rejected和last+1，其中rejected是被拒绝的消息消息index，last是follower最后一条消息
         self.next_idx = cmp::min(rejected, last + 1);
         if self.next_idx < 1 {
             self.next_idx = 1;
         }
+        //恢复进度
         self.resume();
         true
     }
@@ -1039,6 +1045,7 @@ impl Inflights {
 
     /// Frees the inflights smaller or equal to the given `to` flight.
     ///释放小于或等于给定的“ to”航班的机翼。
+    /// 这是一个环形数组，释放小于to的index的所有记录
     pub fn free_to(&mut self, to: u64) {
         if self.count == 0 || to < self.buffer[self.start] {
             // out of the left side of the window

@@ -64,6 +64,7 @@ fn main() {
             thread::sleep(Duration::from_millis(10));
             loop {
                 // Step raft messages.
+                //循环接收消息
                 match node.my_mailbox.try_recv() {
                     Ok(msg) => node.step(msg),
                     Err(TryRecvError::Empty) => break,
@@ -199,7 +200,6 @@ fn on_ready(
     }
     // Get the `Ready` with `RawNode::ready` interface.
     let mut ready = raft_group.ready();
-
     // Persistent raft logs. It's necessary because in `RawNode::advance` we stabilize
     // raft logs to the latest position.
     //本地持久化raft logs
@@ -236,7 +236,7 @@ fn on_ready(
                     ConfChangeType::RemoveNode => raft_group.raft.remove_node(node_id).unwrap(),
                     ConfChangeType::AddLearnerNode => raft_group.raft.add_learner(node_id).unwrap(),
                     ConfChangeType::BeginMembershipChange
-                    | ConfChangeType::FinalizeMembershipChange => unimplemented!(),
+                    | ConfChangeType::FinalizeMembershipChange => unimplemented!(), //这里没有实现对BeginMembershipChange和FinalizeMembershipChange应该如何处理
                 }
             } else {
                 // For normal proposals, extract the key-value pair and then

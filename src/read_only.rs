@@ -150,6 +150,7 @@ impl ReadOnly {
     /// the same context as the given `m`.
     ///推进由ReadOnly结构保留的只读请求队列。 它使请求出队，直到找到与给定的m具有相同上下文的只读请求。
     pub fn advance(&mut self, m: &Message) -> Vec<ReadIndexStatus> {
+        //rss返回满足读取要求的readindex请求
         let mut rss = vec![];
         if let Some(i) = self.read_index_queue.iter().position(|x| {
             if !self.pending_read_index.contains_key(x) {
@@ -158,6 +159,7 @@ impl ReadOnly {
             *x == m.get_context()
         }) {
             for _ in 0..=i {
+                //移出满足多数响应的readindex请求
                 let rs = self.read_index_queue.pop_front().unwrap();
                 let status = self.pending_read_index.remove(&rs).unwrap();
                 rss.push(status);

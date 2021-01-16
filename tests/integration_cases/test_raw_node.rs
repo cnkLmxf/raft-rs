@@ -345,14 +345,19 @@ fn test_raw_node_read_index() {
     }
 
     // ensure the read_states can be read out
+    //确保raft中的read_sattes被处理，即走完了raft会pop出去
     assert!(!raw_node.raft.read_states.is_empty());
     assert!(raw_node.has_ready());
     let rd = raw_node.ready();
+    //确保就绪的read_sates和请求中的一样
     assert_eq!(rd.read_states(), wrs.as_slice());
+    //持久化entries
     s.wl().append(&rd.entries()).expect("");
+    //更新各种元数据
     raw_node.advance(rd);
 
     // ensure raft.read_states is reset after advance
+    //确保advance之后 read_states被重置
     assert!(!raw_node.has_ready());
     assert!(raw_node.raft.read_states.is_empty());
 }
